@@ -1,6 +1,8 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
 
+/* ========== THIẾT LẬP CHUNG ========== */
+
 :root {
   font-family: 'Be Vietnam Pro', Arial, sans-serif;
   color: #203348;
@@ -24,9 +26,19 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
+  height: 100%;
+  overflow: hidden;
   background: #f4f6f9;
 }
 
@@ -44,19 +56,32 @@ button {
 /* ========== BỐ CỤC CHUNG ========== */
 
 .app-shell {
-  min-height: 100vh;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: flex;
+  overflow: hidden;
 }
 
 .app-main {
-  flex: 1;
+  flex: 1 1 auto;
+  width: 0;
+  height: 100vh;
+  height: 100dvh;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .main-content {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 32px 38px 45px;
 }
 
@@ -64,8 +89,13 @@ button {
 
 .sidebar {
   width: 255px;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   flex: 0 0 255px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   padding: 0 15px;
@@ -75,13 +105,15 @@ button {
   z-index: 20;
 }
 
+/* Logo: không sử dụng đường kẻ ngang */
+
 .sidebar-brand {
   min-height: 92px;
   display: flex;
   align-items: center;
   gap: 13px;
   padding: 0 9px;
-  border-bottom: 1px solid rgba(255,255,255,.1);
+  border: 0;
 }
 
 .brand-mark {
@@ -116,26 +148,27 @@ button {
   color: #a8bacb;
 }
 
-.sidebar-caption,
+/* Tiêu đề nhóm chức năng */
+
 .nav-group-label {
+  margin: 0 12px 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #91a8bc;
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 1.4px;
-  color: #8199ae;
+  letter-spacing: 1.3px;
+  line-height: 1.8;
 }
 
-.sidebar-caption {
-  padding: 28px 13px 20px;
-}
-
-.nav-group-label {
-  margin: 0 12px 15px;
-}
+/* Danh sách điều hướng */
 
 .side-navigation {
   display: flex;
   flex-direction: column;
   gap: 7px;
+  padding-top: 18px;
 }
 
 .nav-link {
@@ -174,59 +207,27 @@ button {
   color: #d6a86b;
 }
 
+/* Chấm vàng tại trang đang truy cập */
+
 .nav-active-dot {
   width: 6px;
   height: 6px;
   margin-left: auto;
+  flex-shrink: 0;
   border-radius: 50%;
   background: var(--gold);
 }
+
+/* Phần cuối sidebar */
 
 .sidebar-spacer {
   flex: 1;
   min-height: 70px;
 }
 
-.sidebar-status {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 15px 12px;
-  margin-bottom: 15px;
-  background: rgba(255,255,255,.055);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 11px;
-}
-
-.status-orb {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #4dc895;
-  box-shadow: 0 0 0 4px rgba(77,200,149,.13);
-  flex-shrink: 0;
-}
-
-.status-orb.offline {
-  background: #e66b60;
-  box-shadow: 0 0 0 4px rgba(230,107,96,.13);
-}
-
-.sidebar-status strong {
-  display: block;
-  font-size: 11px;
-  color: #fff;
-}
-
-.sidebar-status small {
-  display: block;
-  margin-top: 4px;
-  font-size: 10px;
-  color: #9db1c2;
-}
-
 .sidebar-bottom {
-  padding: 0 5px 25px;
+  margin-top: auto;
+  padding: 16px 5px 25px;
   font-size: 9px;
   letter-spacing: .5px;
   text-align: center;
@@ -237,6 +238,8 @@ button {
 
 .topbar {
   height: 75px;
+  min-height: 75px;
+  flex: 0 0 75px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -890,11 +893,14 @@ textarea::placeholder {
 /* ========== CHÂN TRANG ========== */
 
 .footer {
+  flex: 0 0 auto;
+  min-height: 50px;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 38px;
+  padding: 12px 38px;
   background: #fff;
   border-top: 1px solid var(--border);
   color: #99a5b2;
@@ -907,6 +913,8 @@ textarea::placeholder {
 .mobile-close {
   display: none;
 }
+
+/* Máy tính bảng và màn hình vừa */
 
 @media (max-width: 1100px) {
   .sidebar {
@@ -923,6 +931,8 @@ textarea::placeholder {
   }
 }
 
+/* Điện thoại */
+
 @media (max-width: 750px) {
   .sidebar {
     position: fixed;
@@ -930,6 +940,10 @@ textarea::placeholder {
     bottom: 0;
     left: 0;
     width: 270px;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow-y: auto;
     transform: translateX(-105%);
     transition: transform .25s;
   }
@@ -964,6 +978,8 @@ textarea::placeholder {
 
   .topbar {
     height: 65px;
+    min-height: 65px;
+    flex-basis: 65px;
     padding: 0 17px;
   }
 
@@ -1001,6 +1017,8 @@ textarea::placeholder {
   }
 
   .footer {
-    padding: 16px;
+    min-height: 48px;
+    padding: 12px 16px;
+    font-size: 9px;
   }
 }

@@ -1,15 +1,43 @@
+
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import PaginationBar from '../components/PaginationBar.vue'
 import api from '../services/api'
 
 const emit = defineEmits(['navigate'])
 
+// ================================
+// TRẠNG THÁI DỮ LIỆU
+// ================================
+
 const loading = ref(true)
 const error = ref('')
+
 const branches = ref([])
 const categories = ref([])
 const items = ref([])
+
 const selectedBranch = ref('')
+
+// ================================
+// PHÂN TRANG DANH SÁCH CƠ SỞ
+// ================================
+
+const currentPage = ref(1)
+const pageSize = ref(10)
+
+const paginatedBranches = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+
+  return branches.value.slice(
+    start,
+    start + pageSize.value
+  )
+})
+
+// ================================
+// THỐNG KÊ TỔNG QUAN
+// ================================
 
 const activeCategoryCount = computed(() =>
   categories.value.filter(
@@ -25,27 +53,40 @@ const missingPriceCount = computed(() =>
   items.value.filter(x => x.DonGia === null).length
 )
 
+// ================================
+// TẢI DỮ LIỆU HỆ THỐNG
+// ================================
+
 async function reload() {
   loading.value = true
   error.value = ''
 
   try {
-    const [b, c] = await Promise.all([
+    const [branchResponse, categoryResponse] = await Promise.all([
       api.get('/branches'),
       api.get('/categories')
     ])
 
-    branches.value = b.data
-    categories.value = c.data
+    branches.value = branchResponse.data
+    categories.value = categoryResponse.data
 
-    if (!selectedBranch.value && branches.value.length) {
-      selectedBranch.value = String(
-        branches.value[0].MaCS
+    // Quay về trang đầu tiên khi tải lại dữ liệu
+    currentPage.value = 1
+
+    // Giữ nguyên cơ sở đã chọn nếu vẫn tồn tại
+    if (
+      !branches.value.some(
+        x => String(x.MaCS) === selectedBranch.value
       )
+    ) {
+      selectedBranch.value = branches.value.length
+        ? String(branches.value[0].MaCS)
+        : ''
     }
 
     await loadBranchItems()
-  } catch {
+
+  } catch (e) {
     error.value =
       'Không thể tải dữ liệu tổng quan. Hãy kiểm tra Laravel và MariaDB.'
   } finally {
@@ -53,14 +94,15 @@ async function reload() {
   }
 }
 
+// ================================
+// TẢI THỰC ĐƠN THEO CƠ SỞ
+// ================================
+
 async function loadBranchItems() {
   if (!selectedBranch.value) {
     items.value = []
     return
   }
-
-  loading.value = true
-  error.value = ''
 
   try {
     const { data } = await api.get('/menu-items', {
@@ -70,14 +112,18 @@ async function loadBranchItems() {
     })
 
     items.value = data
-  } catch {
+
+  } catch (e) {
     items.value = []
+
     error.value =
       'Không thể tải thực đơn của cơ sở đã chọn.'
-  } finally {
-    loading.value = false
   }
 }
+
+// ================================
+// KHỞI TẠO
+// ================================
 
 onMounted(reload)
 </script>
@@ -85,9 +131,6 @@ onMounted(reload)
 <template>
   <div class="page-heading">
     <div>
-      <p class="eyebrow">
-        TRUNG TÂM ĐIỀU HÀNH
-      </p>
 
       <h1>Tổng quan hoạt động</h1>
 
@@ -100,15 +143,23 @@ onMounted(reload)
       <button
         class="secondary-btn"
         @click="reload"
+        :disabled="loading"
       >
-        ↻ Làm mới
+        ↻ {{ loading ? 'Đang tải...' : 'Làm mới' }}
       </button>
     </div>
   </div>
 
-  <div v-if="error" class="alert error">
+  <!-- THÔNG BÁO LỖI -->
+
+  <div
+    v-if="error"
+    class="alert error"
+  >
     {{ error }}
   </div>
+
+  <!-- CHỌN CƠ SỞ -->
 
   <section class="panel filter-panel">
     <div class="filter-field">
@@ -129,7 +180,10 @@ onMounted(reload)
     </div>
   </section>
 
+  <!-- THỐNG KÊ TỔNG QUAN -->
+
   <section class="stat-grid">
+
     <article class="stat-card">
       <span class="stat-icon blue">⌂</span>
 
@@ -183,7 +237,10 @@ onMounted(reload)
         </small>
       </div>
     </article>
+
   </section>
+
+  <!-- GIỚI THIỆU HỆ THỐNG -->
 
   <section class="panel welcome-panel">
     <div>
@@ -212,6 +269,8 @@ onMounted(reload)
     </div>
   </section>
 
+  <!-- TRUY CẬP NHANH -->
+
   <section class="panel">
     <div class="panel-heading">
       <div>
@@ -224,6 +283,7 @@ onMounted(reload)
     </div>
 
     <div class="quick-grid">
+
       <button
         class="quick-card"
         @click="emit('navigate', 'menu')"
@@ -232,6 +292,7 @@ onMounted(reload)
 
         <span>
           <strong>Quản lý thực đơn</strong>
+
           <small>
             Cập nhật món và giá bán theo cơ sở
           </small>
@@ -248,6 +309,7 @@ onMounted(reload)
 
         <span>
           <strong>Danh mục món</strong>
+
           <small>
             Quản lý các nhóm món và nơi chế biến
           </small>
@@ -255,39 +317,53 @@ onMounted(reload)
 
         <span class="quick-arrow">→</span>
       </button>
+
     </div>
   </section>
 
+  <!-- DANH SÁCH CƠ SỞ -->
+
   <section class="panel table-panel">
+
     <div class="panel-heading">
       <div>
         <h2>Danh sách cơ sở hoạt động</h2>
 
         <p class="panel-subtitle">
-          Chỉ hiển thị các cơ sở đang hoạt động trong CSDL
+          Danh sách các cơ sở đang được quản lý trong hệ thống.
         </p>
       </div>
+
+      <span class="tag done">
+        {{ branches.length }} cơ sở
+      </span>
     </div>
 
     <div class="table-wrap">
       <table>
+
         <thead>
           <tr>
-            <th>Mã</th>
-            <th>Cơ sở</th>
+            <th>Mã cơ sở</th>
+            <th>Tên cơ sở</th>
             <th>Địa chỉ</th>
+            <th>Trạng thái</th>
           </tr>
         </thead>
 
         <tbody>
+
           <tr v-if="!branches.length">
-            <td colspan="3" class="empty-state">
+            <td
+              colspan="4"
+              class="empty-state"
+            >
               Chưa có cơ sở đang hoạt động.
             </td>
           </tr>
 
           <tr
-            v-for="b in branches"
+            v-for="b in paginatedBranches"
             :key="b.MaCS"
           >
             <td class="code-cell">
@@ -301,9 +377,27 @@ onMounted(reload)
             <td>
               {{ b.DiaChi || 'Chưa cập nhật' }}
             </td>
+
+            <td>
+              <span class="tag done">
+                {{ b.TrangThai || 'Đang hoạt động' }}
+              </span>
+            </td>
           </tr>
+
         </tbody>
+
       </table>
     </div>
+
+    <!-- THANH PHÂN TRANG -->
+
+    <PaginationBar
+      v-if="branches.length"
+      v-model:page="currentPage"
+      v-model:page-size="pageSize"
+      :total="branches.length"
+    />
+
   </section>
 </template>

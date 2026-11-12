@@ -5,6 +5,11 @@ import api from './services/api'
 import DashboardView from './views/DashboardView.vue'
 import MenuItemsView from './views/MenuItemsView.vue'
 import CategoriesView from './views/CategoriesView.vue'
+import AreasTablesView from './views/AreasTablesView.vue'
+import ReservationsView from './views/ReservationsView.vue'
+import OrdersView from './views/OrdersView.vue'
+import BepBarView from './views/BepBarView.vue'
+import InventoryView from './views/InventoryView.vue'
 
 const currentPage = ref('dashboard')
 const mobileMenuOpen = ref(false)
@@ -14,7 +19,12 @@ const checked = ref(false)
 const navigation = [
   { id: 'dashboard', label: 'Tổng quan', icon: '▦' },
   { id: 'menu', label: 'Quản lý thực đơn', icon: '▤' },
-  { id: 'categories', label: 'Danh mục món', icon: '▥' }
+  { id: 'categories', label: 'Danh mục món', icon: '▥' },
+  { id: 'areas-tables', label: 'Khu vực và bàn', icon: '▦' },
+  { id: 'reservations', label: 'Đặt bàn', icon: '▣' },
+  { id: 'orders', label: 'Order / POS', icon: '▤' },
+  { id: 'bep-bar', label: 'Bếp / Bar', icon: '♨' },
+  { id: 'inventory', label: 'Kho & Mua hàng', icon: '▣' }
 ]
 
 const pageTitle = computed(() =>
@@ -59,8 +69,6 @@ onMounted(async () => {
         </button>
       </div>
 
-      <div class="sidebar-caption">TRUNG TÂM ĐIỀU HÀNH</div>
-
       <nav class="side-navigation">
         <div class="nav-group-label">QUẢN LÝ VẬN HÀNH</div>
 
@@ -85,13 +93,7 @@ onMounted(async () => {
           :class="{ offline: checked && !connected }"
         ></span>
         <div>
-          <strong>
-            {{ !checked ? 'Đang kiểm tra kết nối' :
-               connected ? 'Hệ thống đã kết nối' : 'Mất kết nối máy chủ' }}
-          </strong>
-          <small>
-            {{ connected ? 'Máy chủ và cơ sở dữ liệu' : 'Kiểm tra Laravel và MariaDB' }}
-          </small>
+          
         </div>
       </div>
 
@@ -139,6 +141,11 @@ onMounted(async () => {
         />
         <MenuItemsView v-else-if="currentPage === 'menu'" />
         <CategoriesView v-else-if="currentPage === 'categories'" />
+        <AreasTablesView v-else-if="currentPage === 'areas-tables'" />
+        <ReservationsView v-else-if="currentPage === 'reservations'" />
+        <OrdersView v-else-if="currentPage === 'orders'" />
+        <BepBarView v-else-if="currentPage === 'bep-bar'" />
+        <InventoryView v-else-if="currentPage === 'inventory'" />
       </main>
 
       <footer class="footer">
