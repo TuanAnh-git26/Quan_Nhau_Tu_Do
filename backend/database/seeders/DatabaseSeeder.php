@@ -9,6 +9,16 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Idempotent: tạo quyền mẫu trước; không tạo tài khoản hoặc mật khẩu mặc định.
+        $this->call(RolePermissionSeeder::class);
+
+        // Không tạo trùng dữ liệu mẫu khi chạy db:seed trên CSDL đã vận hành.
+        if (DB::table('CO_SO')
+            ->where('TenCS', 'Quán Nhậu Tự Do - Cơ sở Cầu Giấy (Demo)')
+            ->exists()) {
+            return;
+        }
+
         // Dữ liệu minh họa, không phải dữ liệu vận hành thật của nhà hàng.
         $cs1 = DB::table('CO_SO')->insertGetId([
             'TenCS' => 'Quán Nhậu Tự Do - Cơ sở Cầu Giấy (Demo)',
@@ -25,11 +35,7 @@ class DatabaseSeeder extends Seeder
         ], 'MaCS');
 
         foreach (['Quan ly', 'Phuc vu', 'Thu ngan', 'Bep', 'Bar'] as $position) {
-            DB::table('VI_TRI')->insert(['TenVT' => $position]);
-        }
-
-        foreach (['Quan tri he thong', 'Giam sat', 'Phuc vu', 'Thu ngan', 'Bep', 'Bar'] as $role) {
-            DB::table('VAI_TRO')->insert(['TenVaiTro' => $role, 'MoTaQuyen' => 'Vai trò mẫu để phát triển phân quyền']);
+            DB::table('VI_TRI')->insertOrIgnore(['TenVT' => $position]);
         }
 
         DB::table('KHU_VUC')->insert([

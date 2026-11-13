@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\FinanceController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\BepBarController;
 use App\Http\Controllers\Api\CashierController;
+use App\Http\Controllers\Api\ComplaintController;
 use App\Http\Controllers\Api\DiningController;
 use App\Http\Controllers\Api\HumanResourcesController;
 use App\Http\Controllers\Api\MenuCategoryController;
@@ -50,79 +51,86 @@ Route::get('/branches', function (Request $request) {
     return response()->json($query->orderBy('MaCS')->get(['MaCS', 'TenCS', 'DiaChi', 'SDT']));
 });
 
+Route::get('/categories', [MenuCategoryController::class, 'index'])->middleware('uc:UC2.1,UC2.2,UC2.4');
 Route::apiResource('/categories', MenuCategoryController::class)
-    ->only(['index', 'store', 'update', 'destroy'])->middleware('uc:UC1.2');
+    ->only(['store', 'update', 'destroy'])->middleware('uc:UC2.1');
 
 Route::put(
     '/menu-items/{id}/branch-status',
     [MenuItemController::class, 'updateBranchStatus']
-)->middleware('uc:UC1.3');
+)->middleware('uc:UC2.1');
 
-Route::get('/menu-items', [MenuItemController::class, 'index'])->middleware('uc:UC1.3,UC2.4');
+Route::get('/menu-items', [MenuItemController::class, 'index'])->middleware('uc:UC2.1,UC2.2,UC2.3');
 Route::apiResource('/menu-items', MenuItemController::class)
-    ->only(['store', 'update', 'destroy'])->middleware('uc:UC1.3');
+    ->only(['store', 'update', 'destroy'])->middleware('uc:UC2.1');
 
 
 // ==========================================
 // ĐỢT 2: KHU VỰC VÀ BÀN
 // ==========================================
 
-Route::get('/areas', [DiningController::class, 'areas'])->middleware('uc:UC2.1');
-Route::post('/areas', [DiningController::class, 'storeArea'])->middleware('uc:UC2.1');
-Route::put('/areas/{id}', [DiningController::class, 'updateArea'])->middleware('uc:UC2.1');
-Route::delete('/areas/{id}', [DiningController::class, 'destroyArea'])->middleware('uc:UC2.1');
+Route::get('/areas', [DiningController::class, 'areas'])->middleware('uc:UC1.1,UC1.2,UC1.3,UC2.2');
+Route::post('/areas', [DiningController::class, 'storeArea'])->middleware('uc:UC1.2');
+Route::put('/areas/{id}', [DiningController::class, 'updateArea'])->middleware('uc:UC1.2');
+Route::delete('/areas/{id}', [DiningController::class, 'destroyArea'])->middleware('uc:UC1.2');
 
-Route::get('/tables', [DiningController::class, 'tables'])->middleware('uc:UC2.1,UC2.4');
-Route::post('/tables', [DiningController::class, 'storeTable'])->middleware('uc:UC2.1');
-Route::put('/tables/{id}', [DiningController::class, 'updateTable'])->middleware('uc:UC2.1');
-Route::delete('/tables/{id}', [DiningController::class, 'destroyTable'])->middleware('uc:UC2.1');
-Route::get('/available-tables', [DiningController::class, 'availableTables'])->middleware('uc:UC2.1');
+Route::get('/tables', [DiningController::class, 'tables'])->middleware('uc:UC1.1,UC1.2,UC1.3,UC2.2,UC2.3');
+Route::post('/tables', [DiningController::class, 'storeTable'])->middleware('uc:UC1.2');
+Route::put('/tables/{id}', [DiningController::class, 'updateTable'])->middleware('uc:UC1.2');
+Route::delete('/tables/{id}', [DiningController::class, 'destroyTable'])->middleware('uc:UC1.2');
+Route::get('/available-tables', [DiningController::class, 'availableTables'])->middleware('uc:UC1.1,UC1.2,UC1.3,UC2.2');
 
-Route::get('/employees', [DiningController::class, 'employees'])->middleware('uc:UC2.4,UC6.1,UC2.5,UC5.4,UC7.1,UC7.3,UC7.6,UC8.3');
-Route::post('/employees/quick', [DiningController::class, 'quickStoreEmployee'])->middleware('uc:UC2.4,UC6.1,UC2.5');
-Route::get('/customers', [DiningController::class, 'customers'])->middleware('uc:UC2.4,UC6.1,UC2.5');
+Route::get('/employees', [DiningController::class, 'employees'])->middleware('uc:UC1.1,UC2.2,UC2.3,UC2.4,UC2.5,UC5.1,UC5.4,UC6.1,UC6.3,UC7.1,UC7.3,UC7.6,UC8.3');
+Route::post('/employees/quick', [DiningController::class, 'quickStoreEmployee'])->middleware('uc:UC6.1');
+Route::get('/customers', [DiningController::class, 'customers'])->middleware('uc:UC1.1');
 
 
 // Đặt bàn.
-Route::get('/reservations', [DiningController::class, 'reservations'])->middleware('uc:UC2.2');
-Route::post('/reservations', [DiningController::class, 'storeReservation'])->middleware('uc:UC2.2');
-Route::put('/reservations/{id}', [DiningController::class, 'updateReservation'])->middleware('uc:UC2.2');
-Route::put('/reservations/{id}/status', [DiningController::class, 'updateReservationStatus'])->middleware('uc:UC2.2');
-Route::delete('/reservations/{id}', [DiningController::class, 'cancelReservation'])->middleware('uc:UC2.2');
+Route::get('/reservations', [DiningController::class, 'reservations'])->middleware('uc:UC1.1');
+Route::post('/reservations', [DiningController::class, 'storeReservation'])->middleware('uc:UC1.1');
+Route::put('/reservations/{id}', [DiningController::class, 'updateReservation'])->middleware('uc:UC1.1');
+Route::put('/reservations/{id}/status', [DiningController::class, 'updateReservationStatus'])->middleware('uc:UC1.1,UC1.3');
+Route::delete('/reservations/{id}', [DiningController::class, 'cancelReservation'])->middleware('uc:UC1.1');
 
 
 // ==========================================
 // ĐỢT 2: ORDER / POS
 // ==========================================
 
-Route::get('/orders', [OrderController::class, 'index'])->middleware('uc:UC2.4');
-Route::get('/orders/supervisors', [OrderController::class, 'supervisors'])->middleware('uc:UC2.4,UC2.3');
-Route::post('/orders', [OrderController::class, 'store'])->middleware('uc:UC2.4');
-Route::get('/orders/{id}', [OrderController::class, 'show'])->middleware('uc:UC2.4');
-Route::post('/orders/{id}/items', [OrderController::class, 'addItem'])->middleware('uc:UC2.4');
-Route::put('/orders/{id}/items/{detailId}', [OrderController::class, 'updateItem'])->middleware('uc:UC2.3,UC2.4');
-Route::delete('/orders/{id}/items/{detailId}', [OrderController::class, 'removeItem'])->middleware('uc:UC2.3,UC2.4');
-Route::post('/orders/{id}/send', [OrderController::class, 'send'])->middleware('uc:UC2.4');
-Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel'])->middleware('uc:UC2.4');
+Route::get('/orders', [OrderController::class, 'index'])->middleware('uc:UC2.2,UC2.3,UC2.4');
+Route::get('/orders/supervisors', [OrderController::class, 'supervisors'])->middleware('uc:UC2.2,UC2.3');
+Route::post('/orders', [OrderController::class, 'store'])->middleware('uc:UC2.2');
+Route::get('/orders/{id}', [OrderController::class, 'show'])->middleware('uc:UC2.2,UC2.3,UC2.4');
+Route::post('/orders/{id}/items', [OrderController::class, 'addItem'])->middleware('uc:UC2.2');
+Route::put('/orders/{id}/items/{detailId}', [OrderController::class, 'updateItem'])->middleware('uc:UC2.3');
+Route::delete('/orders/{id}/items/{detailId}', [OrderController::class, 'removeItem'])->middleware('uc:UC2.3');
+Route::post('/orders/{id}/send', [OrderController::class, 'send'])->middleware('uc:UC2.2,UC2.4');
+Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel'])->middleware('uc:UC2.3');
+
+
+// UC2.5 - Phiếu khiếu nại, xử lý sự cố.
+Route::get('/complaints', [ComplaintController::class, 'index'])->middleware('uc:UC2.5');
+Route::post('/complaints', [ComplaintController::class, 'store'])->middleware('uc:UC2.5');
+Route::put('/complaints/{id}', [ComplaintController::class, 'update'])->middleware('uc:UC2.5');
 
 
 // ==========================================
 // ĐỢT 3: BẾP / BAR
 // ==========================================
 
-Route::get('/bep-bar/orders', [BepBarController::class, 'index'])->middleware('uc:UC3.2');
+Route::get('/bep-bar/orders', [BepBarController::class, 'index'])->middleware('uc:UC3.1,UC3.2');
 
 Route::patch(
     '/bep-bar/items/{detailId}/status',
     [BepBarController::class, 'updateStatus']
 )->middleware('uc:UC3.2');
 
-Route::get('/service-notifications', [BepBarController::class, 'notifications'])->middleware('uc:UC3.3');
+Route::get('/service-notifications', [BepBarController::class, 'notifications'])->middleware('uc:UC2.4');
 
 Route::put(
     '/service-notifications/{notificationId}/read',
     [BepBarController::class, 'markNotificationRead']
-)->middleware('uc:UC3.3');
+)->middleware('uc:UC2.4');
 
 
 // ==========================================
@@ -184,12 +192,12 @@ Route::get('/inventory/issues', [InventoryController::class, 'issues'])->middlew
 Route::post('/inventory/issues', [InventoryController::class, 'storeIssue'])->middleware('uc:UC4.3');
 
 Route::get('/inventory/stocktakes', [InventoryController::class, 'stocktakes'])->middleware('uc:UC4.4');
-Route::post('/inventory/stocktakes', [InventoryController::class, 'storeStocktake'])->middleware('uc:UC4.1');
+Route::post('/inventory/stocktakes', [InventoryController::class, 'storeStocktake'])->middleware('uc:UC4.4');
 
 Route::post(
     '/inventory/stocktakes/{id}/confirm',
     [InventoryController::class, 'confirmStocktake']
-)->middleware('uc:UC4.1');
+)->middleware('uc:UC4.4');
 
 Route::get('/inventory/recipes', [InventoryController::class, 'recipes'])->middleware('uc:UC4.5');
 
@@ -277,88 +285,88 @@ Route::post(
 Route::prefix('hr')->group(function () {
 
     // Tổng quan.
-    Route::get('/dashboard', [HumanResourcesController::class, 'dashboard'])->middleware('uc:UC8.3');
+    Route::get('/dashboard', [HumanResourcesController::class, 'dashboard'])->middleware('uc:UC6.1,UC6.2,UC6.4');
 
     // Vị trí / chức danh.
-    Route::get('/positions', [HumanResourcesController::class, 'positions'])->middleware('uc:UC8.3');
-    Route::post('/positions', [HumanResourcesController::class, 'storePosition'])->middleware('uc:UC8.3');
-    Route::put('/positions/{id}', [HumanResourcesController::class, 'updatePosition'])->middleware('uc:UC8.3');
-    Route::delete('/positions/{id}', [HumanResourcesController::class, 'deletePosition'])->middleware('uc:UC8.3');
+    Route::get('/positions', [HumanResourcesController::class, 'positions'])->middleware('uc:UC6.1');
+    Route::post('/positions', [HumanResourcesController::class, 'storePosition'])->middleware('uc:UC6.1');
+    Route::put('/positions/{id}', [HumanResourcesController::class, 'updatePosition'])->middleware('uc:UC6.1');
+    Route::delete('/positions/{id}', [HumanResourcesController::class, 'deletePosition'])->middleware('uc:UC6.1');
 
     // Hồ sơ nhân viên.
-    Route::get('/employees', [HumanResourcesController::class, 'employees'])->middleware('uc:UC2.4,UC6.1,UC2.5');
-    Route::post('/employees', [HumanResourcesController::class, 'storeEmployee'])->middleware('uc:UC2.4,UC6.1,UC2.5');
-    Route::put('/employees/{id}', [HumanResourcesController::class, 'updateEmployee'])->middleware('uc:UC2.4,UC6.1,UC2.5');
+    Route::get('/employees', [HumanResourcesController::class, 'employees'])->middleware('uc:UC6.1,UC6.2,UC6.3,UC6.4,UC7.1,UC7.6,UC8.3');
+    Route::post('/employees', [HumanResourcesController::class, 'storeEmployee'])->middleware('uc:UC6.1');
+    Route::put('/employees/{id}', [HumanResourcesController::class, 'updateEmployee'])->middleware('uc:UC6.1');
 
     Route::patch(
         '/employees/{id}/status',
         [HumanResourcesController::class, 'changeEmployeeStatus']
-    )->middleware('uc:UC2.4,UC6.1,UC2.5');
+    )->middleware('uc:UC6.1');
 
     // Hợp đồng lao động.
-    Route::get('/contracts', [HumanResourcesController::class, 'contracts'])->middleware('uc:UC8.3');
-    Route::post('/contracts', [HumanResourcesController::class, 'storeContract'])->middleware('uc:UC8.3');
-    Route::put('/contracts/{id}', [HumanResourcesController::class, 'updateContract'])->middleware('uc:UC8.3');
+    Route::get('/contracts', [HumanResourcesController::class, 'contracts'])->middleware('uc:UC6.1');
+    Route::post('/contracts', [HumanResourcesController::class, 'storeContract'])->middleware('uc:UC6.1');
+    Route::put('/contracts/{id}', [HumanResourcesController::class, 'updateContract'])->middleware('uc:UC6.1');
 
     Route::post(
         '/contracts/{id}/end',
         [HumanResourcesController::class, 'endContract']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.1');
 
     // Ca làm.
-    Route::get('/shifts', [HumanResourcesController::class, 'shifts'])->middleware('uc:UC8.3');
-    Route::post('/shifts', [HumanResourcesController::class, 'storeShift'])->middleware('uc:UC8.3');
-    Route::put('/shifts/{id}', [HumanResourcesController::class, 'updateShift'])->middleware('uc:UC8.3');
+    Route::get('/shifts', [HumanResourcesController::class, 'shifts'])->middleware('uc:UC6.2');
+    Route::post('/shifts', [HumanResourcesController::class, 'storeShift'])->middleware('uc:UC6.2');
+    Route::put('/shifts/{id}', [HumanResourcesController::class, 'updateShift'])->middleware('uc:UC6.2');
 
     Route::post(
         '/shifts/{id}/disable',
         [HumanResourcesController::class, 'disableShift']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.2');
 
     // Xếp ca / chấm công.
-    Route::get('/attendance', [HumanResourcesController::class, 'attendance'])->middleware('uc:UC8.3');
-    Route::post('/attendance', [HumanResourcesController::class, 'assignAttendance'])->middleware('uc:UC8.3');
-    Route::patch('/attendance/{id}', [HumanResourcesController::class, 'updateAttendance'])->middleware('uc:UC8.3');
+    Route::get('/attendance', [HumanResourcesController::class, 'attendance'])->middleware('uc:UC6.2,UC6.3');
+    Route::post('/attendance', [HumanResourcesController::class, 'assignAttendance'])->middleware('uc:UC6.2,UC6.3');
+    Route::patch('/attendance/{id}', [HumanResourcesController::class, 'updateAttendance'])->middleware('uc:UC6.2,UC6.3');
 
     Route::post(
         '/attendance/{id}/clock-in',
         [HumanResourcesController::class, 'clockIn']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.2,UC6.3');
 
     Route::post(
         '/attendance/{id}/clock-out',
         [HumanResourcesController::class, 'clockOut']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.2,UC6.3');
 
     Route::delete(
         '/attendance/{id}',
         [HumanResourcesController::class, 'deleteAttendance']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.2,UC6.3');
 
     // Bảng lương.
-    Route::get('/payrolls', [HumanResourcesController::class, 'payrolls'])->middleware('uc:UC8.3');
+    Route::get('/payrolls', [HumanResourcesController::class, 'payrolls'])->middleware('uc:UC6.4');
 
     Route::post(
         '/payrolls/generate',
         [HumanResourcesController::class, 'generatePayroll']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.4');
 
-    Route::put('/payrolls/{id}', [HumanResourcesController::class, 'updatePayroll'])->middleware('uc:UC8.3');
+    Route::put('/payrolls/{id}', [HumanResourcesController::class, 'updatePayroll'])->middleware('uc:UC6.4');
 
     Route::post(
         '/payrolls/{id}/submit',
         [HumanResourcesController::class, 'submitPayroll']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.4');
 
     Route::post(
         '/payrolls/{id}/return',
         [HumanResourcesController::class, 'returnPayroll']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.4');
 
     Route::post(
         '/payrolls/{id}/approve',
         [HumanResourcesController::class, 'approvePayroll']
-    )->middleware('uc:UC8.3');
+    )->middleware('uc:UC6.4');
 });
 
 // TASK 8: Quản trị hệ thống, quyền theo UC và yêu cầu hỗ trợ.

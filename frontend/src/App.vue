@@ -7,6 +7,7 @@ import CategoriesView from './views/CategoriesView.vue'
 import AreasTablesView from './views/AreasTablesView.vue'
 import ReservationsView from './views/ReservationsView.vue'
 import OrdersView from './views/OrdersView.vue'
+import ComplaintsView from './views/ComplaintsView.vue'
 import BepBarView from './views/BepBarView.vue'
 import InventoryView from './views/InventoryView.vue'
 import CashierView from './views/CashierView.vue'
@@ -19,13 +20,14 @@ const user = ref(null), loading = ref(true), loginBusy = ref(false), loginError 
 const loginForm = ref({ TenDangNhap: '', MatKhau: '', MaCS: '' })
 const loginBranches = ref([])
 const allNavigation = [
-  { id:'dashboard', label:'Tổng quan', icon:'▦', uc:'UC1.1' },
-  { id:'menu', label:'Quản lý thực đơn', icon:'▤', uc:'UC1.3' },
-  { id:'categories', label:'Danh mục món', icon:'▥', uc:'UC1.2' },
-  { id:'areas-tables', label:'Khu vực và bàn', icon:'▦', uc:'UC2.1' },
-  { id:'reservations', label:'Đặt bàn', icon:'▣', uc:'UC2.2' },
-  { id:'orders', label:'Order / POS', icon:'▤', uc:'UC2.4' },
-  { id:'bep-bar', label:'Bếp / Bar', icon:'♨', uc:'UC3.2' },
+  { id:'dashboard', label:'Tổng quan', icon:'▦', uc:null },
+  { id:'menu', label:'Quản lý thực đơn', icon:'▤', uc:'UC2.1' },
+  { id:'categories', label:'Danh mục món', icon:'▥', uc:'UC2.1' },
+  { id:'areas-tables', label:'Khu vực và bàn', icon:'▦', uc:'UC1.2' },
+  { id:'reservations', label:'Đặt bàn', icon:'▣', uc:'UC1.1' },
+  { id:'orders', label:'Order / POS', icon:'▤', uc:'UC2.2' },
+  { id:'bep-bar', label:'Bếp / Bar', icon:'♨', uc:'UC3.1' },
+  { id:'complaints', label:'Khiếu nại / sự cố', icon:'⚑', uc:'UC2.5' },
   { id:'inventory', label:'Kho & mua hàng', icon:'▣', uc:'UC4.1' },
   { id:'cashier', label:'Thu ngân và hóa đơn', icon:'▣', uc:'UC5.4' },
   { id:'hr', label:'Nhân sự và tiền lương', icon:'♙', uc:'UC6.1' },
@@ -34,7 +36,9 @@ const allNavigation = [
 ]
 const has = uc => !uc || (user.value?.Quyen || []).includes('*') || (user.value?.Quyen || []).includes(uc)
 const navigation = computed(() => allNavigation.filter(item => {
-  if (item.id === 'system') return true
+  if (item.id === 'system') return ['UC8.2','UC8.3','UC8.4','UC8.5'].some(has)
+  if (item.id === 'orders') return ['UC2.2','UC2.3'].some(has)
+  if (item.id === 'bep-bar') return ['UC3.1','UC3.2'].some(has)
   if (item.id === 'finance') return ['UC7.1','UC7.2','UC7.3','UC7.4','UC7.5','UC7.6'].some(has)
   if (item.id === 'hr') return ['UC6.1','UC6.2','UC6.3','UC6.4'].some(has)
   if (item.id === 'inventory') return ['UC4.1','UC4.2','UC4.3','UC4.4','UC4.5','UC4.6','UC4.7'].some(has)
@@ -67,47 +71,20 @@ async function loadMe() {
   }
 }
 async function login() {
-  if (loginBusy.value) return
   loginBusy.value = true
   loginError.value = ''
-
   try {
-    // 1. Gửi thông tin đăng nhập và nhận cookie phiên từ Laravel.
     await loginSession({
       TenDangNhap: loginForm.value.TenDangNhap,
       MatKhau: loginForm.value.MatKhau,
       MaCS: Number(loginForm.value.MaCS),
     })
-
-    // 2. Xác nhận phiên thực sự được lưu: không nuốt lỗi 401/403/419/500.
-    const response = await api.get('/auth/me')
-    const profile = response.data?.data ?? response.data
-
-    if (!profile || !profile.MaTK) {
-      throw new Error('API /auth/me không trả về thông tin tài khoản hợp lệ.')
-    }
-
-    // 3. Chỉ chuyển sang giao diện quản lý khi xác thực đã hoàn tất.
-    user.value = profile
     loginForm.value.MatKhau = ''
+    await loadMe()
     currentPage.value = navigation.value[0]?.id || 'system'
   } catch (e) {
-    user.value = null
-
-    const errors = e?.response?.data?.errors
-    const fieldMessage = errors ? Object.values(errors).flat().join(' ') : ''
-    const status = e?.response?.status
-    const endpoint = String(e?.config?.url || '')
-    const serverMessage = e?.response?.data?.message
-
-    if (endpoint.includes('/auth/me')) {
-      loginError.value =
-        fieldMessage ||
-        `Đã gửi yêu cầu đăng nhập nhưng không xác nhận được phiên (API /auth/me, HTTP ${status || 'không có phản hồi'}). ` +
-        (serverMessage || 'Hãy mở frontend bằng http://127.0.0.1:5173 và kiểm tra cookie phiên Laravel.')
-    } else {
-      loginError.value = fieldMessage || serverMessage || e?.message || 'Không thể đăng nhập.'
-    }
+    loginError.value = Object.values(e?.response?.data?.errors || {}).flat().join(' ')
+      || e?.response?.data?.message || 'Không thể đăng nhập.'
   } finally {
     loginBusy.value = false
   }
@@ -168,6 +145,7 @@ onUnmounted(() => window.removeEventListener('qntd-session-expired', expired))
       <ReservationsView v-else-if="currentPage==='reservations'" />
       <OrdersView v-else-if="currentPage==='orders'" />
       <BepBarView v-else-if="currentPage==='bep-bar'" />
+      <ComplaintsView v-else-if="currentPage==='complaints'" :user="user" />
       <InventoryView v-else-if="currentPage==='inventory'" />
       <CashierView v-else-if="currentPage==='cashier'" />
       <HumanResourcesView v-else-if="currentPage==='hr'" />

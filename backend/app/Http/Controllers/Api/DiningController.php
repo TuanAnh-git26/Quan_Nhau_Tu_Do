@@ -429,39 +429,102 @@ class DiningController extends Controller
     public function storeReservation(Request $request)
     {
         $data = $this->validateReservation($request);
-        $id = DB::transaction(fn () => $this->persistReservation($data));
+        $id = DB::transaction(function () use ($data) {
+            $id = $this->persistReservation($data);
+            $this->writeLog('Tao dat ban',
+                "Phiếu #{$id}, bàn: " . implode(',', $data['MaBan']) .
+                "; đến {$data['ThoiGianDen']}; kết thúc dự kiến {$data['ThoiGianKetThucDuKien']}; " .
+                "trạng thái Cho xac nhan.");
+            return $id;
+        });
         return response()->json(['message' => 'Đã tạo phiếu đặt bàn.', 'MaDatBan' => $id], 201);
     }
 
     public function updateReservation(Request $request, int $id)
     {
-        $reservation = DB::table('DAT_BAN')->where('MaDatBan', $id)->first();
-        abort_unless($reservation, 404, 'Không tìm thấy phiếu đặt bàn.');
-        if (in_array($reservation->TrangThai, ['Da huy', 'Hoan tat'], true)) {
-            throw ValidationException::withMessages(['TrangThai' => 'Phiếu đã kết thúc, không thể chỉnh sửa.']);
-        }
         $data = $this->validateReservation($request, $id);
-        DB::transaction(fn () => $this->persistReservation($data, $id));
+        DB::transaction(function () use ($id, $data) {
+            $reservation = DB::table('DAT_BAN')->where('MaDatBan', $id)->lockForUpdate()->first();
+            abort_unless($reservation, 404, 'Không tìm thấy phiếu đặt bàn.');
+            if (in_array($reservation->TrangThai, ['Da huy', 'Hoan tat'], true)) {
+                throw ValidationException::withMessages([
+                    'TrangThai' => 'Phiếu đã kết thúc, không thể chỉnh sửa.',
+                ]);
+            }
+
+            $oldTables = DB::table('DAT_BAN_BAN')->where('MaDatBan', $id)
+                ->orderBy('MaBan')->pluck('MaBan')->implode(',');
+            $this->persistReservation($data, $id);
+            $this->writeLog('Sua dat ban',
+                "Phiếu #{$id}, bàn {$oldTables} -> " . implode(',', $data['MaBan']) .
+                "; giờ đến {$reservation->ThoiGianDen} -> {$data['ThoiGianDen']}; " .
+                "trạng thái {$reservation->TrangThai}.");
+        });
         return response()->json(['message' => 'Đã cập nhật phiếu đặt bàn.']);
     }
 
     public function updateReservationStatus(Request $request, int $id)
     {
-        $data = $request->validate(['TrangThai' => ['required', Rule::in(['Cho xac nhan', 'Da xac nhan', 'Khach da den', 'Da huy', 'Hoan tat'])]]);
-        $reservation = DB::table('DAT_BAN')->where('MaDatBan', $id)->first();
-        abort_unless($reservation, 404, 'Không tìm thấy phiếu đặt bàn.');
-        DB::table('DAT_BAN')->where('MaDatBan', $id)->update(['TrangThai' => $data['TrangThai']]);
+        $data = $request->validate([
+            'TrangThai' => ['required', Rule::in([
+                'Cho xac nhan', 'Da xac nhan', 'Khach da den', 'Da huy', 'Hoan tat',
+            ])],
+        ]);
+
+        DB::transaction(function () use ($id, $data) {
+            $reservation = DB::table('DAT_BAN')->where('MaDatBan', $id)
+                ->lockForUpdate()->first();
+            abort_unless($reservation, 404, 'Không tìm thấy phiếu đặt bàn.');
+            $tables = DB::table('DAT_BAN_BAN')->where('MaDatBan', $id)
+                ->orderBy('MaBan')->pluck('MaBan')->implode(',');
+
+            DB::table('DAT_BAN')->where('MaDatBan', $id)->update([
+                'TrangThai' => $data['TrangThai'],
+            ]);
+            $this->writeLog('Doi trang thai dat ban',
+                "Phiếu #{$id}, bàn {$tables}; giờ {$reservation->ThoiGianDen}; " .
+                "{$reservation->TrangThai} -> {$data['TrangThai']}.");
+        });
         return response()->json(['message' => 'Đã cập nhật trạng thái phiếu đặt bàn.']);
     }
 
     public function cancelReservation(int $id)
     {
-        $reservation = DB::table('DAT_BAN')->where('MaDatBan', $id)->first();
-        abort_unless($reservation, 404, 'Không tìm thấy phiếu đặt bàn.');
-        if ($reservation->TrangThai === 'Hoan tat') {
-            throw ValidationException::withMessages(['TrangThai' => 'Phiếu đã hoàn tất, không thể hủy.']);
-        }
-        DB::table('DAT_BAN')->where('MaDatBan', $id)->update(['TrangThai' => 'Da huy']);
+        DB::transaction(function () use ($id) {
+            $reservation = DB::table('DAT_BAN')->where('MaDatBan', $id)
+                ->lockForUpdate()->first();
+            abort_unless($reservation, 404, 'Không tìm thấy phiếu đặt bàn.');
+            if ($reservation->TrangThai === 'Hoan tat') {
+                throw ValidationException::withMessages([
+                    'TrangThai' => 'Phiếu đã hoàn tất, không thể hủy.',
+                ]);
+            }
+            if ($reservation->TrangThai === 'Da huy') {
+                throw ValidationException::withMessages([
+                    'TrangThai' => 'Phiếu đã bị hủy trước đó.',
+                ]);
+            }
+
+            $tables = DB::table('DAT_BAN_BAN')->where('MaDatBan', $id)
+                ->orderBy('MaBan')->pluck('MaBan')->implode(',');
+            DB::table('DAT_BAN')->where('MaDatBan', $id)->update([
+                'TrangThai' => 'Da huy',
+            ]);
+            $this->writeLog('Huy dat ban',
+                "Phiếu #{$id}, bàn {$tables}; giờ {$reservation->ThoiGianDen}; " .
+                "{$reservation->TrangThai} -> Da huy.");
+        });
         return response()->json(['message' => 'Đã hủy phiếu đặt bàn.']);
+    }
+
+    private function writeLog(string $action, string $details): void
+    {
+        DB::table('NHAT_KY')->insert([
+            'ThoiGian' => now(),
+            'HanhDong' => $action,
+            'DoiTuong' => 'DAT_BAN',
+            'NoiDungThayDoi' => $details,
+            'MaTK' => request()->user()?->getAuthIdentifier(),
+        ]);
     }
 }

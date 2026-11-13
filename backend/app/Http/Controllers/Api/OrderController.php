@@ -385,19 +385,34 @@ class OrderController extends Controller
 
     public function send(int $id)
     {
-        $order = DB::table('PHIEU_ORDER')->where('MaOrder', $id)->first();
-        abort_unless($order, 404, 'Không tìm thấy order.');
-        if (!in_array($order->TrangThai, ['Dang mo', 'Da gui'], true)) {
-            throw ValidationException::withMessages(['TrangThai' => 'Order không ở trạng thái có thể gửi.']);
-        }
-
-        $hasItems = DB::table('CHI_TIET_ORDER')->where('MaOrder', $id)->where('TrangThaiMon', '<>', 'Da huy')->exists();
-        if (!$hasItems) throw ValidationException::withMessages(['ChiTiet' => 'Order chưa có món hợp lệ.']);
-
         DB::transaction(function () use ($id) {
-            DB::table('PHIEU_ORDER')->where('MaOrder', $id)->update(['TrangThai' => 'Da gui']);
-            DB::table('CHI_TIET_ORDER')->where('MaOrder', $id)->whereNull('ThoiGianNhan')
-                ->where('TrangThaiMon', '<>', 'Da huy')->update(['ThoiGianNhan' => now()]);
+            $order = DB::table('PHIEU_ORDER')->where('MaOrder', $id)
+                ->lockForUpdate()->first();
+            abort_unless($order, 404, 'Không tìm thấy order.');
+            if (!in_array($order->TrangThai, ['Dang mo', 'Da gui'], true)) {
+                throw ValidationException::withMessages([
+                    'TrangThai' => 'Order không ở trạng thái có thể gửi.',
+                ]);
+            }
+
+            $hasItems = DB::table('CHI_TIET_ORDER')->where('MaOrder', $id)
+                ->where('TrangThaiMon', '<>', 'Da huy')->exists();
+            if (!$hasItems) {
+                throw ValidationException::withMessages([
+                    'ChiTiet' => 'Order chưa có món hợp lệ.',
+                ]);
+            }
+
+            DB::table('PHIEU_ORDER')->where('MaOrder', $id)->update([
+                'TrangThai' => 'Da gui',
+            ]);
+            $sentLines = DB::table('CHI_TIET_ORDER')->where('MaOrder', $id)
+                ->whereNull('ThoiGianNhan')->where('TrangThaiMon', '<>', 'Da huy')
+                ->update(['ThoiGianNhan' => now()]);
+
+            $this->writeLog('Gui order', 'PHIEU_ORDER',
+                "Order #{$id}, bàn #{$order->MaBan}; " .
+                "{$order->TrangThai} -> Da gui; {$sentLines} dòng món mới gửi Bếp/Bar.");
         });
 
         return response()->json(['message' => 'Đã gửi order đến Bếp/Bar.']);
@@ -405,16 +420,26 @@ class OrderController extends Controller
 
     public function cancel(int $id)
     {
-        $order = DB::table('PHIEU_ORDER')->where('MaOrder', $id)->first();
-        abort_unless($order, 404, 'Không tìm thấy order.');
-        if ($order->TrangThai !== 'Dang mo') {
-            throw ValidationException::withMessages(['TrangThai' => 'Chỉ được hủy order khi order còn ở trạng thái nháp.']);
-        }
+        DB::transaction(function () use ($id) {
+            $order = DB::table('PHIEU_ORDER')->where('MaOrder', $id)
+                ->lockForUpdate()->first();
+            abort_unless($order, 404, 'Không tìm thấy order.');
+            if ($order->TrangThai !== 'Dang mo') {
+                throw ValidationException::withMessages([
+                    'TrangThai' => 'Chỉ được hủy order khi order còn ở trạng thái nháp.',
+                ]);
+            }
 
-        DB::transaction(function () use ($id, $order) {
-            DB::table('CHI_TIET_ORDER')->where('MaOrder', $id)->update(['TrangThaiMon' => 'Da huy']);
-            DB::table('PHIEU_ORDER')->where('MaOrder', $id)->update(['TrangThai' => 'Da huy']);
-            DB::table('BAN')->where('MaBan', $order->MaBan)->where('TrangThai', 'Dang phuc vu')->update(['TrangThai' => 'Trong']);
+            DB::table('CHI_TIET_ORDER')->where('MaOrder', $id)
+                ->update(['TrangThaiMon' => 'Da huy']);
+            DB::table('PHIEU_ORDER')->where('MaOrder', $id)
+                ->update(['TrangThai' => 'Da huy']);
+            DB::table('BAN')->where('MaBan', $order->MaBan)
+                ->where('TrangThai', 'Dang phuc vu')
+                ->update(['TrangThai' => 'Trong']);
+
+            $this->writeLog('Huy order', 'PHIEU_ORDER',
+                "Order #{$id}, bàn #{$order->MaBan}; {$order->TrangThai} -> Da huy.");
         });
 
         return response()->json(['message' => 'Đã hủy order nháp.']);

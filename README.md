@@ -134,3 +134,31 @@ Trong phpMyAdmin, chọn database `quan_nhau_tu_do`, mở tab SQL và chạy n�
 - Kiểm tra phiên bản MySQL/MariaDB bằng `SELECT VERSION();`. Các CHECK constraint cần MySQL 8.0.16+ hoặc MariaDB đủ mới (khuyến nghị MariaDB 10.3+).
 - Báo cáo mô tả chi tiết kiểu dữ liệu cho một số bảng trọng tâm; một số trường của các bảng còn lại là đề xuất triển khai dựa trên ERD và mô tả nghiệp vụ, cần nhóm đối chiếu trước khi dùng dữ liệu thật.
 - Đây là bản demo Tuần 4, chưa có đầy đủ xác thực và phân quyền production. Không nhập dữ liệu khách hàng/nhân viên thật.
+
+
+## Cập nhật danh mục thực đơn công khai
+
+Sau khi đã cài đặt và chạy migration, từ thư mục `backend` chạy:
+
+```bash
+php artisan db:seed --class=OfficialMenuSeeder
+```
+
+Seeder bổ sung danh sách cơ sở và 24 món có tên được xác minh từ nguồn công khai, không xóa dữ liệu hiện có. Xem `docs/DU_LIEU_THUC_DON_CONG_KHAI.md` để biết giới hạn nguồn dữ liệu và `docs/GIA_THAM_KHAO_WEBSITE.csv` để tham khảo giá hiển thị trên trang chủ. Không chạy `migrate:fresh`.
+
+
+## Khởi tạo lần đầu – Nhóm 8 (phiên bản báo cáo v3)
+
+1. Sao lưu cơ sở dữ liệu nếu đã có dữ liệu. Chỉnh `backend/.env` để trỏ tới **đúng database** trên XAMPP.
+2. Với **database hoàn toàn mới**, nạp `backend/database/schema_mysql.sql` theo hướng dẫn dự án, sau đó kiểm tra migration hiện có trước khi chạy `php artisan migrate`. **Không dùng `migrate:fresh` trên database đang sử dụng.**
+3. Từ thư mục `backend`, chạy `php artisan migrate:status` và `php artisan db:seed` (phân quyền mẫu được bổ sung qua `RolePermissionSeeder`). Nếu đã có dữ liệu mẫu, có thể chỉ chạy `php artisan db:seed --class=RolePermissionSeeder` để tránh trùng.
+4. Chạy `php artisan qntd:make-admin <tên_đăng_nhập>`, nhập mật khẩu theo lời nhắc trong Terminal. Không seed mật khẩu mặc định vào source.
+5. Đăng nhập bằng tài khoản quản trị, chọn cơ sở và tạo tài khoản cho nhân viên tại **Quản trị → Tài khoản**. Gán vai trò theo bảng Use Case v3.
+6. Bộ seed **chỉ bổ sung** quyền còn thiếu và không tự thu hồi quyền cũ đã gán. Nếu trước đó đã gán sai UC, cần rà soát ở trang Quản trị → Vai trò & quyền.
+
+### Kiểm thử tích hợp an toàn
+
+- Tạo riêng database `quan_nhau_tu_do_test` và nhập cấu trúc `schema_mysql.sql` vào database test. Không nhập dữ liệu vận hành thật.
+- Đặt biến môi trường `DB_DATABASE=quan_nhau_tu_do_test` trong `backend/.env.testing` (hoặc cấu hình PHPUnit phù hợp).
+- Chạy `php artisan config:clear`, rồi `php artisan test --testsuite=Feature`.
+- Không chạy `RefreshDatabase`/`migrate:fresh` trên database thật. Các test mới có chốt an toàn, từ chối database không có hậu tố `_test`.
