@@ -6,3 +6,9 @@
 /frontend/.env
 .DS_Store
 Thumbs.db
+
+/backend/storage/logs/*.log
+/backend/storage/framework/sessions/*
+/backend/storage/framework/cache/data/*
+/backend/bootstrap/cache/*.php
+!/backend/**/.gitkeep

@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EnsureBranchScope;
+use App\Http\Middleware\RequireUseCase;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -12,9 +14,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // CORS mặc định được xử lý bởi Laravel; cấu hình domain thật trước khi triển khai.
+        // Sanctum SPA: sử dụng cookie session + chống CSRF, không phát token JS.
+        $middleware->statefulApi();
+        $middleware->alias([
+            'uc' => RequireUseCase::class,
+            'branch.scope' => EnsureBranchScope::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // Có thể bổ sung ghi log/định dạng lỗi API ở giai đoạn tích hợp.
     })
     ->create();

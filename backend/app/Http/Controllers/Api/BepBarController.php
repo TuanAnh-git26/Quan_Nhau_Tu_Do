@@ -6,229 +6,224 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class BepBarController extends Controller
 {
-    private const CHO_CHE_BIEN = 'Cho che bien';
-    private const DANG_CHE_BIEN = 'Dang che bien';
-    private const HOAN_TAT = 'Hoan tat';
-    private const DA_HUY = 'Da huy';
+    private const NEXT = [
+        'Cho che bien' => 'Da nhan',
+        'Da nhan' => 'Dang che bien',
+        'Dang che bien' => 'Hoan tat',
+    ];
 
-    /**
-     * Danh sách món cần Bếp/Bar xử lý.
-     */
+    private function itemsQuery(int $branchId)
+    {
+        return DB::table('CHI_TIET_ORDER as ct')
+            ->join('PHIEU_ORDER as po', 'po.MaOrder', '=', 'ct.MaOrder')
+            ->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')
+            ->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')
+            ->join('MON as m', 'm.MaMon', '=', 'ct.MaMon')
+            ->join('DANH_MUC_MON as dm', 'dm.MaDM', '=', 'm.MaDM')
+            ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'po.MaNV')
+            ->where('kv.MaCS', $branchId)
+            ->whereIn('po.TrangThai', ['Da gui', 'Dang thanh toan'])
+            ->whereNotNull('ct.ThoiGianNhan')
+            ->where('ct.TrangThaiMon', '<>', 'Da huy')
+            ->select([
+                'ct.MaCTOrder', 'ct.MaOrder', 'ct.MaMon', 'ct.SoLuong',
+                'ct.GhiChu', 'ct.TrangThaiMon', 'ct.ThoiGianNhan',
+                'ct.ThoiGianBatDauCheBien', 'ct.ThoiGianHoanTat',
+                'po.ThoiGianTao', 'po.MaNV', 'b.SoBan', 'kv.TenKV', 'kv.MaCS',
+                'm.TenMon', 'm.DonViTinh', 'dm.TenDM', 'dm.NoiCheBien',
+                'nv.HoTen as NhanVienPhuTrach',
+            ]);
+    }
+
     public function index(Request $request)
     {
         $data = $request->validate([
             'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
-            'NoiCheBien' => ['nullable', 'string', 'max:50'],
-            'TrangThaiMon' => ['nullable', 'string', 'max:30'],
+            'BoPhan' => ['nullable', Rule::in(['Bep', 'Bar'])],
+            'NoiCheBien' => ['nullable', Rule::in(['Bep', 'Bar'])],
+            'TrangThaiMon' => ['nullable', Rule::in([
+                'Cho che bien', 'Da nhan', 'Dang che bien', 'Hoan tat', 'Tat ca',
+            ])],
             'q' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
         ]);
 
-        $query = $this->orderItemsQuery((int) $data['MaCS']);
+        $query = $this->itemsQuery((int) $data['MaCS']);
 
-        if (!empty($data['NoiCheBien'])) {
-            $query->where(
-                'dm.NoiCheBien',
-                $data['NoiCheBien']
-            );
+        $department = $data['BoPhan'] ?? $data['NoiCheBien'] ?? null;
+        if ($department) {
+            $query->where('dm.NoiCheBien', $department);
         }
 
         $status = $data['TrangThaiMon'] ?? null;
 
-        if ($status === 'Tat ca') {
-            // Hiển thị tất cả món, trừ món đã hủy.
-        } elseif (!empty($status)) {
+        if ($status && $status !== 'Tat ca') {
             $query->where('ct.TrangThaiMon', $status);
-        } else {
-            // Mặc định chỉ hiển thị món đang cần xử lý.
-            $query->whereIn('ct.TrangThaiMon', [
-                self::CHO_CHE_BIEN,
-                self::DANG_CHE_BIEN,
-            ]);
+        } elseif (!$status) {
+            $query->where(function ($q) {
+                $q->whereIn('ct.TrangThaiMon', [
+                    'Cho che bien', 'Da nhan', 'Dang che bien',
+                ])->orWhere(function ($done) {
+                    $done->where('ct.TrangThaiMon', 'Hoan tat')
+                        ->whereDate('ct.ThoiGianHoanTat', now()->toDateString());
+                });
+            });
         }
 
         if (!empty($data['q'])) {
-            $keyword = trim($data['q']);
+            $word = trim($data['q']);
 
-            $query->where(function ($sub) use ($keyword) {
-                $sub->where('m.TenMon', 'like', "%{$keyword}%")
-                    ->orWhere('dm.TenDM', 'like', "%{$keyword}%")
-                    ->orWhere('b.SoBan', 'like', "%{$keyword}%");
+            $query->where(function ($q) use ($word) {
+                $q->where('m.TenMon', 'like', "%{$word}%")
+                    ->orWhere('b.SoBan', 'like', "%{$word}%")
+                    ->orWhere('kv.TenKV', 'like', "%{$word}%");
 
-                if (ctype_digit($keyword)) {
-                    $sub->orWhere(
-                        'ct.MaCTOrder',
-                        (int) $keyword
-                    )->orWhere(
-                        'po.MaOrder',
-                        (int) $keyword
-                    );
+                if (ctype_digit($word)) {
+                    $q->orWhere('ct.MaCTOrder', (int) $word)
+                        ->orWhere('po.MaOrder', (int) $word);
                 }
             });
         }
 
-        $query->orderByRaw("
-            CASE
-                WHEN ct.TrangThaiMon = 'Dang che bien' THEN 0
-                WHEN ct.TrangThaiMon = 'Cho che bien' THEN 1
-                ELSE 2
-            END
-        ")
+        $query->orderByRaw(
+            "CASE ct.TrangThaiMon
+                WHEN 'Cho che bien' THEN 0
+                WHEN 'Da nhan' THEN 1
+                WHEN 'Dang che bien' THEN 2
+                ELSE 3
+            END"
+        )
         ->orderBy('ct.ThoiGianNhan')
         ->orderBy('ct.MaCTOrder');
 
         return response()->json(
-            $query->paginate($data['per_page'] ?? 10)
+            $query->paginate((int) ($data['per_page'] ?? 50))
         );
     }
 
-    /**
-     * Truy vấn dữ liệu món theo cơ sở.
-     */
-    private function orderItemsQuery(int $branchId)
+    public function updateStatus(Request $request, int $detailId)
     {
-        return DB::table('CHI_TIET_ORDER as ct')
-            ->join(
-                'PHIEU_ORDER as po',
-                'po.MaOrder',
-                '=',
-                'ct.MaOrder'
-            )
-            ->join(
-                'MON as m',
-                'm.MaMon',
-                '=',
-                'ct.MaMon'
-            )
-            ->join(
-                'DANH_MUC_MON as dm',
-                'dm.MaDM',
-                '=',
-                'm.MaDM'
-            )
-            ->join(
-                'BAN as b',
-                'b.MaBan',
-                '=',
-                'po.MaBan'
-            )
-            ->join(
-                'KHU_VUC as kv',
-                'kv.MaKV',
-                '=',
-                'b.MaKV'
-            )
-            ->where('kv.MaCS', $branchId)
-            ->whereNotNull('ct.ThoiGianNhan')
-            ->where('ct.TrangThaiMon', '<>', self::DA_HUY)
-            ->select([
-                'ct.MaCTOrder',
-                'ct.MaOrder',
-                'ct.MaMon',
-                'm.TenMon',
-                'dm.TenDM',
-                'dm.NoiCheBien',
-                'ct.SoLuong',
-                'ct.DonGia',
-                'ct.GhiChu',
-                'ct.TrangThaiMon',
-                'ct.ThoiGianNhan',
-                'ct.ThoiGianBatDauCheBien',
-                'ct.ThoiGianHoanTat',
-                'po.TrangThai as TrangThaiOrder',
-                'b.SoBan',
-                'kv.TenKV',
-                'kv.MaCS',
-            ]);
-    }
-
-    /**
-     * Cập nhật trạng thái chế biến.
-     *
-     * Chờ chế biến -> Đang chế biến -> Hoàn tất.
-     */
-    public function updateStatus(
-        Request $request,
-        int $detailId
-    ) {
         $data = $request->validate([
+            'MaCS' => ['nullable', 'integer', 'exists:CO_SO,MaCS'],
+            'BoPhan' => ['nullable', Rule::in(['Bep', 'Bar'])],
+            'TrangThaiHienTai' => [
+                'nullable',
+                Rule::in(array_keys(self::NEXT))
+            ],
             'TrangThaiMon' => [
                 'required',
-                'string',
-                'in:Dang che bien,Hoan tat',
+                'in:Da nhan,Dang che bien,Hoan tat'
             ],
         ]);
 
-        $result = DB::transaction(function () use (
-            $detailId,
-            $data
-        ) {
-            $detail = DB::table('CHI_TIET_ORDER')
+        $result = DB::transaction(function () use ($detailId, $data) {
+            $line = DB::table('CHI_TIET_ORDER')
                 ->where('MaCTOrder', $detailId)
                 ->lockForUpdate()
                 ->first();
 
+            abort_unless($line, 404, 'Không tìm thấy món trong order.');
+
+            $info = DB::table('CHI_TIET_ORDER as ct')
+                ->join('PHIEU_ORDER as po', 'po.MaOrder', '=', 'ct.MaOrder')
+                ->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')
+                ->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')
+                ->join('MON as m', 'm.MaMon', '=', 'ct.MaMon')
+                ->join('DANH_MUC_MON as dm', 'dm.MaDM', '=', 'm.MaDM')
+                ->where('ct.MaCTOrder', $detailId)
+                ->first([
+                    'kv.MaCS',
+                    'dm.NoiCheBien',
+                    'po.TrangThai as TrangThaiOrder'
+                ]);
+
             abort_unless(
-                $detail,
+                $info,
                 404,
-                'Không tìm thấy món trong order.'
+                'Không tìm thấy cơ sở hoặc bộ phận chế biến.'
             );
 
-            if ($detail->TrangThaiMon === self::DA_HUY) {
+            if (
+                isset($data['MaCS']) &&
+                (int) $data['MaCS'] !== (int) $info->MaCS
+            ) {
+                abort(403, 'Món không thuộc cơ sở đã chọn.');
+            }
+
+            if (
+                isset($data['BoPhan']) &&
+                $data['BoPhan'] !== $info->NoiCheBien
+            ) {
+                abort(403, 'Món thuộc bộ phận khác.');
+            }
+
+            if (!in_array(
+                $info->TrangThaiOrder,
+                ['Da gui', 'Dang thanh toan'],
+                true
+            )) {
+                throw ValidationException::withMessages([
+                    'TrangThaiMon' => 'Order chưa được gửi hoặc đã kết thúc.',
+                ]);
+            }
+
+            if ($line->TrangThaiMon === 'Da huy') {
                 throw ValidationException::withMessages([
                     'TrangThaiMon' => 'Món đã bị hủy, không thể cập nhật.',
                 ]);
             }
 
-            if (empty($detail->ThoiGianNhan)) {
+            if (!$line->ThoiGianNhan) {
                 throw ValidationException::withMessages([
                     'TrangThaiMon' => 'Món chưa được gửi đến Bếp/Bar.',
                 ]);
             }
 
-            $currentStatus = $detail->TrangThaiMon;
-            $newStatus = $data['TrangThaiMon'];
-
-            // Không thực hiện lại thao tác đã hoàn thành.
-            if ($currentStatus === $newStatus) {
-                return $detail;
+            if (
+                isset($data['TrangThaiHienTai']) &&
+                $line->TrangThaiMon !== $data['TrangThaiHienTai']
+            ) {
+                abort(
+                    409,
+                    'Món vừa được thiết bị khác cập nhật. Hãy làm mới dữ liệu.'
+                );
             }
 
             if (
-                $currentStatus === self::CHO_CHE_BIEN
-                && $newStatus === self::DANG_CHE_BIEN
+                (self::NEXT[$line->TrangThaiMon] ?? null)
+                !== $data['TrangThaiMon']
             ) {
-                DB::table('CHI_TIET_ORDER')
-                    ->where('MaCTOrder', $detailId)
-                    ->update([
-                        'TrangThaiMon' => self::DANG_CHE_BIEN,
-                        'ThoiGianBatDauCheBien' =>
-                            $detail->ThoiGianBatDauCheBien
-                                ?: now(),
-                    ]);
-            } elseif (
-                $currentStatus === self::DANG_CHE_BIEN
-                && $newStatus === self::HOAN_TAT
-            ) {
-                DB::table('CHI_TIET_ORDER')
-                    ->where('MaCTOrder', $detailId)
-                    ->update([
-                        'TrangThaiMon' => self::HOAN_TAT,
-                        'ThoiGianBatDauCheBien' =>
-                            $detail->ThoiGianBatDauCheBien
-                                ?: now(),
-                        'ThoiGianHoanTat' => now(),
-                    ]);
-            } else {
                 throw ValidationException::withMessages([
                     'TrangThaiMon' =>
                         'Không thể chuyển trạng thái món theo quy trình hiện tại.',
                 ]);
             }
+
+            $update = [
+                'TrangThaiMon' => $data['TrangThaiMon']
+            ];
+
+            if ($data['TrangThaiMon'] === 'Da nhan') {
+                $update['ThoiGianNhan'] =
+                    $line->ThoiGianNhan ?: now();
+            } elseif ($data['TrangThaiMon'] === 'Dang che bien') {
+                $update['ThoiGianBatDauCheBien'] =
+                    $line->ThoiGianBatDauCheBien ?: now();
+            } else {
+                $update['ThoiGianHoanTat'] =
+                    $line->ThoiGianHoanTat ?: now();
+            }
+
+            DB::table('CHI_TIET_ORDER')
+                ->where('MaCTOrder', $detailId)
+                ->where('TrangThaiMon', $line->TrangThaiMon)
+                ->update($update);
 
             return DB::table('CHI_TIET_ORDER')
                 ->where('MaCTOrder', $detailId)
@@ -236,58 +231,49 @@ class BepBarController extends Controller
         });
 
         return response()->json([
-            'message' => 'Cập nhật trạng thái chế biến thành công.',
+            'message' => 'Đã cập nhật trạng thái chế biến.',
             'data' => $result,
         ]);
     }
 
-    /**
-     * Danh sách thông báo món mới trong 24 giờ gần nhất.
-     */
     public function notifications(Request $request)
     {
         $data = $request->validate([
             'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
         ]);
 
-        $branchId = (int) $data['MaCS'];
+        $branch = (int) $data['MaCS'];
+        $read = Cache::store('file')->get('bepbar_read_' . $branch, []);
 
-        $cacheKey = 'bepbar_read_notifications_' . $branchId;
-
-        $readIds = Cache::store('file')->get($cacheKey, []);
-
-        if (!is_array($readIds)) {
-            $readIds = [];
-        }
-
-        $items = $this->orderItemsQuery($branchId)
-            ->where(
-                'ct.ThoiGianNhan',
-                '>=',
-                now()->subHours(24)
-            )
+        $rows = $this->itemsQuery($branch)
+            ->where('ct.ThoiGianNhan', '>=', now()->subHours(24))
             ->orderByDesc('ct.ThoiGianNhan')
             ->limit(30)
             ->get();
 
-        $items->transform(function ($item) use ($readIds) {
-            $item->DaDoc = in_array(
-                (int) $item->MaCTOrder,
-                array_map('intval', $readIds),
+        foreach ($rows as $row) {
+            $row->MaTB = $row->MaCTOrder;
+            $row->ThoiGianTao = $row->ThoiGianNhan;
+            $row->NhanVienNhan = $row->NhanVienPhuTrach;
+
+            $row->NoiDung =
+                "Món {$row->TenMon} tại bàn {$row->SoBan}: " .
+                (
+                    $row->TrangThaiMon === 'Hoan tat'
+                        ? 'đã hoàn tất.'
+                        : 'đã gửi Bếp/Bar.'
+                );
+
+            $row->DaDoc = in_array(
+                (int) $row->MaCTOrder,
+                (array) $read,
                 true
             );
+        }
 
-            return $item;
-        });
-
-        return response()->json($items);
+        return response()->json($rows);
     }
 
-    /**
-     * Đánh dấu thông báo đã đọc.
-     *
-     * notificationId chính là MaCTOrder.
-     */
     public function markNotificationRead(
         Request $request,
         int $notificationId
@@ -296,40 +282,28 @@ class BepBarController extends Controller
             'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
         ]);
 
-        $branchId = (int) $data['MaCS'];
-
-        $exists = $this->orderItemsQuery($branchId)
-            ->where('ct.MaCTOrder', $notificationId)
-            ->exists();
+        $branch = (int) $data['MaCS'];
 
         abort_unless(
-            $exists,
+            $this->itemsQuery($branch)
+                ->where('ct.MaCTOrder', $notificationId)
+                ->exists(),
             404,
-            'Không tìm thấy thông báo.'
+            'Không tìm thấy thông báo ở cơ sở đang chọn.'
         );
 
-        $cacheKey = 'bepbar_read_notifications_' . $branchId;
-
-        $readIds = Cache::store('file')->get($cacheKey, []);
-
-        if (!is_array($readIds)) {
-            $readIds = [];
-        }
-
-        $readIds[] = $notificationId;
-
-        $readIds = array_values(
-            array_unique(array_map('intval', $readIds))
-        );
+        $key = 'bepbar_read_' . $branch;
+        $read = Cache::store('file')->get($key, []);
+        $read[] = $notificationId;
 
         Cache::store('file')->put(
-            $cacheKey,
-            $readIds,
+            $key,
+            array_values(array_unique(array_map('intval', $read))),
             now()->addDays(30)
         );
 
         return response()->json([
-            'message' => 'Đã đánh dấu thông báo là đã đọc.',
+            'message' => 'Đã đánh dấu thông báo là đã đọc.'
         ]);
     }
 }

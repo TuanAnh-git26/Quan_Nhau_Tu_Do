@@ -5,6 +5,11 @@ import api from '../services/api'
 const branches = ref([])
 const tables = ref([])
 const employees = ref([])
+const supervisors = ref([])
+const supervisorModal = ref(false)
+const supervisorSelected = ref('')
+const supervisorPassword = ref('')
+const pendingChange = ref(null)
 const menuItems = ref([])
 const orders = ref([])
 const selectedBranch = ref('')
@@ -53,7 +58,7 @@ const categories = computed(() => {
   return [...map.values()].sort((a, b) => Number(a.MaDM) - Number(b.MaDM))
 })
 const orderTotal = computed(() => Number(order.value?.TamTinh || 0))
-const orderCanEdit = computed(() => order.value?.TrangThai === 'Dang mo')
+const orderCanEdit = computed(() => ['Dang mo', 'Da gui'].includes(order.value?.TrangThai))
 const orderCanAdd = computed(() => ['Dang mo', 'Da gui'].includes(order.value?.TrangThai))
 
 function money(value) {
@@ -79,7 +84,7 @@ function readError(e, fallback) {
 
 async function loadBranchData() {
   if (!selectedBranch.value) {
-    tables.value = []; employees.value = []; menuItems.value = []; orders.value = []
+    tables.value = []; employees.value = []; supervisors.value = []; menuItems.value = []; orders.value = []
     return
   }
   const [t, e, m, o] = await Promise.all([
@@ -90,6 +95,11 @@ async function loadBranchData() {
   ])
   tables.value = (Array.isArray(t.data) ? t.data : []).sort((a, b) => Number(a.MaBan) - Number(b.MaBan))
   employees.value = Array.isArray(e.data) ? e.data : []
+  // Chỉ lấy tên/mã và chức danh Giám sát ở cơ sở đang chọn.
+  const supervisorRes = await api.get('/orders/supervisors', {
+    params: { MaCS: selectedBranch.value }
+  })
+  supervisors.value = Array.isArray(supervisorRes.data) ? supervisorRes.data : []
   menuItems.value = Array.isArray(m.data) ? m.data : []
   orders.value = Array.isArray(o.data) ? o.data : []
   if (selectedEmployee.value && !employees.value.some(x => String(x.MaNV) === String(selectedEmployee.value))) selectedEmployee.value = ''
@@ -170,24 +180,65 @@ async function addMenuItem(item) {
     saving.value = false
   }
 }
-async function changeLine(detail, delta) {
-  if (!orderCanEdit.value) return
-  const quantity = Number(detail.SoLuong) + delta
-  if (quantity < 1) return
+function canChangeLine(detail) {
+  return orderCanEdit.value && ['Cho che bien', 'Da nhan', 'Dang che bien'].includes(detail.TrangThaiMon)
+}
+function needsApproval(detail) {
+  return ['Da nhan', 'Dang che bien'].includes(detail.TrangThaiMon)
+}
+function requestApproval(action) {
+  if (!supervisors.value.length) {
+    error.value = 'Cơ sở chưa có Giám sát/Quản lý đang làm. Hãy cập nhật chức danh trong phân hệ Nhân sự.'
+    return
+  }
+  pendingChange.value = action
+  supervisorSelected.value = ''
+  supervisorPassword.value = ''
+  supervisorModal.value = true
+}
+async function submitSupervisorApproval() {
+  if (!supervisorSelected.value || !pendingChange.value) return
+  const action = { ...pendingChange.value, MaNVDuyet: Number(supervisorSelected.value), MatKhauNVDuyet: supervisorPassword.value }
+  supervisorModal.value = false
+  pendingChange.value = null
+  supervisorPassword.value = ''
+  await executeLineAction(action)
+}
+async function executeLineAction(action) {
+  const { type, detail, quantity, MaNVDuyet, MatKhauNVDuyet } = action
+  saving.value = true; error.value = ''; success.value = ''
   try {
-    await api.put(`/orders/${order.value.MaOrder}/items/${detail.MaCTOrder}`, { SoLuong: quantity, GhiChu: detail.GhiChu || null })
+    if (type === 'update') {
+      await api.put(`/orders/${order.value.MaOrder}/items/${detail.MaCTOrder}`, {
+        SoLuong: quantity, GhiChu: detail.GhiChu || null, MaNVDuyet: MaNVDuyet || null, MatKhauNVDuyet: MatKhauNVDuyet || null
+      })
+      success.value = 'Đã cập nhật món.'
+    } else {
+      await api.delete(`/orders/${order.value.MaOrder}/items/${detail.MaCTOrder}`, {
+        data: { MaNVDuyet: MaNVDuyet || null, MatKhauNVDuyet: MatKhauNVDuyet || null }
+      })
+      success.value = 'Đã hủy món khỏi order.'
+    }
     await loadOrder(order.value.MaOrder)
     await loadBranchData()
-  } catch (e) { error.value = readError(e, 'Không thể cập nhật số lượng.') }
+  } catch (e) {
+    error.value = readError(e, 'Không thể cập nhật/hủy món.')
+  } finally { saving.value = false }
+}
+async function changeLine(detail, delta) {
+  if (!canChangeLine(detail) || saving.value) return
+  const quantity = Number(detail.SoLuong) + delta
+  if (quantity < 1 || quantity > 999) return
+  const action = { type: 'update', detail, quantity }
+  if (needsApproval(detail)) requestApproval(action)
+  else await executeLineAction(action)
 }
 async function cancelLine(detail) {
-  if (!confirm(`Hủy món “${detail.TenMon}” khỏi order nháp?`)) return
-  try {
-    await api.delete(`/orders/${order.value.MaOrder}/items/${detail.MaCTOrder}`)
-    await loadOrder(order.value.MaOrder)
-    await loadBranchData()
-    success.value = 'Đã hủy món khỏi order nháp.'
-  } catch (e) { error.value = readError(e, 'Không thể hủy món.') }
+  if (!canChangeLine(detail) || saving.value) return
+  if (!confirm(`Hủy món “${detail.TenMon}” khỏi order #${order.value.MaOrder}?`)) return
+  const action = { type: 'cancel', detail }
+  if (needsApproval(detail)) requestApproval(action)
+  else await executeLineAction(action)
 }
 async function sendOrder() {
   if (!order.value || !confirm(`Gửi order #${order.value.MaOrder} đến Bếp/Bar?`)) return
@@ -287,13 +338,13 @@ onMounted(loadInitial)
         <div class="order-lines">
           <article v-for="d in order.ChiTiet" :key="d.MaCTOrder" class="order-line" :class="{ cancelled: d.TrangThaiMon === 'Da huy' }">
             <div class="order-line-main"><strong>{{ d.TenMon }}</strong><small>#{{ d.MaMon }} · {{ d.TenDM }} · {{ d.NoiCheBien === 'Bep' ? 'Bếp' : 'Quầy pha chế' }}</small><small v-if="d.GhiChu">Ghi chú: {{ d.GhiChu }}</small><small v-if="d.TrangThaiMon === 'Da huy'" class="line-cancelled">Đã hủy</small></div>
-            <div v-if="orderCanEdit && d.TrangThaiMon !== 'Da huy'" class="order-line-qty"><button @click="changeLine(d,-1)">−</button><strong>{{ d.SoLuong }}</strong><button @click="changeLine(d,1)">＋</button></div><div v-else class="order-line-qty"><strong>{{ d.SoLuong }}</strong></div>
-            <div class="order-line-price">{{ money(d.ThanhTien) }}<button v-if="orderCanEdit && d.TrangThaiMon !== 'Da huy'" class="text-btn danger-text" @click="cancelLine(d)">Hủy món</button></div>
+            <div v-if="canChangeLine(d)" class="order-line-qty"><button @click="changeLine(d,-1)">−</button><strong>{{ d.SoLuong }}</strong><button @click="changeLine(d,1)">＋</button></div><div v-else class="order-line-qty"><strong>{{ d.SoLuong }}</strong></div>
+            <div class="order-line-price">{{ money(d.ThanhTien) }}<button v-if="canChangeLine(d)" class="text-btn danger-text" @click="cancelLine(d)">Hủy món</button></div>
           </article>
           <div v-if="!order.ChiTiet.length" class="empty-state">Order chưa có món. Chọn món từ danh sách bên trái.</div>
         </div>
         <div class="order-total"><span>Tạm tính</span><strong>{{ money(orderTotal) }}</strong></div>
-        <div v-if="orderCanEdit" class="order-actions"><button class="secondary-btn danger-outline" @click="cancelOrder">Hủy order nháp</button><button class="primary-btn" :disabled="saving || !order.ChiTiet.some(x => x.TrangThaiMon !== 'Da huy')" @click="sendOrder">{{ saving ? 'Đang gửi...' : 'Gửi Bếp / Bar →' }}</button></div>
+        <div v-if="orderCanEdit" class="order-actions"><button v-if="order.TrangThai === 'Dang mo'" class="secondary-btn danger-outline" @click="cancelOrder">Hủy order nháp</button><button class="primary-btn" :disabled="saving || !order.ChiTiet.some(x => x.TrangThaiMon !== 'Da huy')" @click="sendOrder">{{ saving ? 'Đang gửi...' : order.TrangThai === 'Da gui' ? 'Gửi món bổ sung →' : 'Gửi Bếp / Bar →' }}</button></div>
         <div v-else class="sent-note">Order đã gửi. Bạn có thể thêm món gọi thêm; món mới được ghi nhận riêng để Bếp/Bar tiếp nhận.</div>
       </template>
     </section>
@@ -308,6 +359,31 @@ onMounted(loadInitial)
     </tbody></table></div>
     <div v-if="filteredOrders.length" class="pos-pagination"><span>Trang {{ currentPage }} / {{ orderPageCount }}</span><div><select v-model.number="pageSize"><option :value="5">5 / trang</option><option :value="8">8 / trang</option><option :value="15">15 / trang</option></select><button :disabled="currentPage <= 1" @click="currentPage--">Trước</button><button :disabled="currentPage >= orderPageCount" @click="currentPage++">Sau</button></div></div>
   </section>
+
+  <div v-if="supervisorModal" class="modal-backdrop" @click.self="supervisorModal = false">
+    <form class="modal-card" @submit.prevent="submitSupervisorApproval">
+      <div class="modal-heading">
+        <div><p class="eyebrow">PHÊ DUYỆT THAY ĐỔI MÓN</p><h2>Chọn Giám sát / Quản lý</h2></div>
+        <button type="button" class="close-btn" @click="supervisorModal = false">×</button>
+      </div>
+      <p class="form-hint">Món đã nhận hoặc đang chế biến cần Giám sát/Quản lý cùng cơ sở phê duyệt trước khi sửa hoặc hủy.</p>
+      <label>Người phê duyệt <span>*</span>
+        <select v-model="supervisorSelected" required>
+          <option value="">Chọn người phê duyệt</option>
+          <option v-for="person in supervisors" :key="person.MaNV" :value="String(person.MaNV)">
+            {{ person.HoTen }} — {{ person.TenVT }}
+          </option>
+        </select>
+      </label>
+      <label>Mật khẩu Giám sát xác nhận <span>*</span>
+        <input v-model="supervisorPassword" type="password" autocomplete="off" required placeholder="Giám sát nhập mật khẩu để duyệt" />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" @click="supervisorModal = false">Đóng</button>
+        <button type="submit" :disabled="!supervisorSelected || !supervisorPassword || saving" class="primary-btn">Xác nhận duyệt</button>
+      </div>
+    </form>
+  </div>
 
   <div v-if="employeeModal" class="modal-backdrop" @click.self="employeeModal = false"><form class="modal-card" @submit.prevent="createQuickEmployee"><div class="modal-heading"><div><p class="eyebrow">NHÂN SỰ PHỤ TRÁCH ORDER</p><h2>Tạo nhân viên dùng cho demo</h2></div><button type="button" class="close-btn" @click="employeeModal = false">×</button></div><p class="form-hint">Tạo hồ sơ tối thiểu để ghi nhận nhân viên lập order. Hồ sơ nhân sự đầy đủ thuộc phân hệ Nhân sự ở đợt sau.</p><label>Họ tên nhân viên <span>*</span><input v-model.trim="employeeName" required maxlength="150" placeholder="Nhập họ tên" /></label><label>Số điện thoại<input v-model.trim="employeePhone" maxlength="20" placeholder="Không bắt buộc" /></label><div class="modal-actions"><button type="button" class="secondary-btn" @click="employeeModal = false">Hủy</button><button type="submit" class="primary-btn" :disabled="saving">{{ saving ? 'Đang lưu...' : 'Tạo nhân viên' }}</button></div></form></div>
 </template>

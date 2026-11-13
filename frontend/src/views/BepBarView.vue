@@ -1,1276 +1,491 @@
-
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import api from '../services/api'
 
 const branches = ref([])
 const selectedBranch = ref('')
-
-const orders = ref([])
+const department = ref('Bep')
+const items = ref([])
 const notifications = ref([])
-
-const loading = ref(false)
-const branchesLoading = ref(true)
-const error = ref('')
-const busyId = ref(null)
-
-const keyword = ref('')
-const selectedStation = ref('')
+const search = ref('')
 const selectedStatus = ref('')
+const page = ref(1)
+const total = ref(0)
+const perPage = ref(50)
+const loading = ref(false)
+const refreshing = ref(false)
+const savingIds = ref([])
+const error = ref('')
+const success = ref('')
+const lastUpdated = ref(null)
+let refreshTimer = null
 
-const currentPage = ref(1)
-const perPage = ref(10)
-
-const pagination = ref({
-  currentPage: 1,
-  lastPage: 1,
-  total: 0,
-  perPage: 10
-})
-
-const waitingCount = computed(() =>
-  orders.value.filter(
-    item => item.TrangThaiMon === 'Cho che bien'
-  ).length
-)
-
-const cookingCount = computed(() =>
-  orders.value.filter(
-    item => item.TrangThaiMon === 'Dang che bien'
-  ).length
-)
-
-const unreadCount = computed(() =>
-  notifications.value.filter(
-    item => !item.DaDoc
-  ).length
-)
-
-const pageNumbers = computed(() => {
-  const start = Math.max(1, currentPage.value - 2)
-  const end = Math.min(
-    pagination.value.lastPage,
-    currentPage.value + 2
-  )
-
-  return Array.from(
-    { length: Math.max(0, end - start + 1) },
-    (_, index) => start + index
+const filteredItems = computed(() => {
+  const key = search.value.trim().toLocaleLowerCase('vi-VN')
+  return items.value.filter(item => !key ||
+    `${item.SoBan} ${item.TenKV} ${item.TenMon} ${item.MaOrder} ${item.NhanVienPhuTrach}`
+      .toLocaleLowerCase('vi-VN').includes(key)
   )
 })
+const newItems = computed(() => filteredItems.value.filter(x => ['Cho che bien', 'Da nhan'].includes(x.TrangThaiMon)))
+const cookingItems = computed(() => filteredItems.value.filter(x => x.TrangThaiMon === 'Dang che bien'))
+const completedItems = computed(() => filteredItems.value.filter(x => x.TrangThaiMon === 'Hoan tat'))
+const pendingCount = computed(() => items.value.filter(x => ['Cho che bien', 'Da nhan'].includes(x.TrangThaiMon)).length)
+const cookingCount = computed(() => items.value.filter(x => x.TrangThaiMon === 'Dang che bien').length)
+const completedCount = computed(() => items.value.filter(x => x.TrangThaiMon === 'Hoan tat').length)
+const unreadNotificationCount = computed(() => notifications.value.filter(x => !x.DaDoc).length)
 
-const firstRecord = computed(() => {
-  if (!pagination.value.total) return 0
-
-  return (
-    (pagination.value.currentPage - 1) *
-    pagination.value.perPage + 1
-  )
-})
-
-const lastRecord = computed(() =>
-  Math.min(
-    pagination.value.currentPage *
-      pagination.value.perPage,
-    pagination.value.total
-  )
-)
-
-function getErrorMessage(err, fallback) {
-  return (
-    err?.response?.data?.message ||
-    err?.response?.data?.errors?.TrangThaiMon?.[0] ||
-    fallback
-  )
+function readError(e, fallback) {
+  if (e.response?.status === 409) return e.response?.data?.message || 'Món vừa được thiết bị khác cập nhật. Vui lòng tải lại.'
+  const errors = e.response?.data?.errors
+  return errors ? Object.values(errors).flat().join(' ') : (e.response?.data?.message || fallback)
 }
-
-function statusLabel(status) {
-  const labels = {
+function dateText(value) {
+  if (!value) return '—'
+  const normalized = String(value).replace(' ', 'T')
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN')
+}
+function statusLabel(value) {
+  return ({
     'Cho che bien': 'Chờ chế biến',
+    'Da nhan': 'Đã nhận',
     'Dang che bien': 'Đang chế biến',
     'Hoan tat': 'Hoàn tất',
     'Da huy': 'Đã hủy'
-  }
-
-  return labels[status] || status || 'Chưa xác định'
+  })[value] || value
 }
-
-function statusClass(status) {
-  const classes = {
-    'Cho che bien': 'status-waiting',
-    'Dang che bien': 'status-cooking',
-    'Hoan tat': 'status-completed',
-    'Da huy': 'status-cancelled'
-  }
-
-  return classes[status] || ''
+function receivedText(item) {
+  return item.ThoiGianNhan ? `Nhận lúc ${dateText(item.ThoiGianNhan)}` : `Order lúc ${dateText(item.ThoiGianTao)}`
 }
-
-function stationLabel(value) {
-  const labels = {
-    Bep: 'Bếp',
-    Bar: 'Bar'
-  }
-
-  return labels[value] || value || 'Chưa phân bộ phận'
-}
-
-function formatDate(value) {
-  if (!value) return 'Chưa ghi nhận'
-
-  const date = new Date(
-    String(value).replace(' ', 'T')
-  )
-
-  if (Number.isNaN(date.getTime())) return value
-
-  return date.toLocaleString('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  })
-}
-
 function nextStatus(item) {
-  if (item.TrangThaiMon === 'Cho che bien') {
-    return 'Dang che bien'
-  }
-
-  if (item.TrangThaiMon === 'Dang che bien') {
-    return 'Hoan tat'
-  }
-
-  return null
+  return ({ 'Cho che bien': 'Da nhan', 'Da nhan': 'Dang che bien', 'Dang che bien': 'Hoan tat' })[item.TrangThaiMon] || null
 }
-
 function actionLabel(item) {
-  if (item.TrangThaiMon === 'Cho che bien') {
-    return 'Bắt đầu chế biến'
-  }
-
-  if (item.TrangThaiMon === 'Dang che bien') {
-    return 'Hoàn tất món'
-  }
-
-  return 'Đã hoàn tất'
+  return ({ 'Cho che bien': 'Nhận món', 'Da nhan': 'Bắt đầu chế biến', 'Dang che bien': 'Hoàn tất món' })[item.TrangThaiMon] || ''
 }
 
-async function loadBranches() {
-  branchesLoading.value = true
-
-  try {
-    const response = await api.get('/branches')
-
-    branches.value = Array.isArray(response.data)
-      ? response.data
-      : response.data?.data || []
-
-    if (
-      !selectedBranch.value &&
-      branches.value.length
-    ) {
-      selectedBranch.value = String(
-        branches.value[0].MaCS
-      )
-    }
-  } catch (err) {
-    error.value = getErrorMessage(
-      err,
-      'Không thể tải danh sách cơ sở.'
-    )
-  } finally {
-    branchesLoading.value = false
-  }
-}
-
-async function loadOrders() {
+async function loadItems(silent = false) {
   if (!selectedBranch.value) {
-    orders.value = []
-    pagination.value.total = 0
+    items.value = []
+    notifications.value = []
     return
   }
+  if (silent) refreshing.value = true
+  else loading.value = true
+  try {
+    const [boardResponse, notificationResponse] = await Promise.all([
+      api.get('/bep-bar/orders', { params: { MaCS: selectedBranch.value, BoPhan: department.value, TrangThaiMon: selectedStatus.value || undefined, page: page.value, per_page: perPage.value } }),
+      api.get('/service-notifications', { params: { MaCS: selectedBranch.value } })
+    ])
+    items.value = Array.isArray(boardResponse.data) ? boardResponse.data : (boardResponse.data?.data || [])
+    total.value = Number(boardResponse.data?.total ?? items.value.length)
+    notifications.value = Array.isArray(notificationResponse.data) ? notificationResponse.data : []
+    lastUpdated.value = new Date()
+    if (error.value && silent) error.value = ''
+  } catch (e) {
+    if (!silent || !items.value.length) error.value = readError(e, 'Không thể tải danh sách món của Bếp/Bar.')
+  } finally {
+    loading.value = false
+    refreshing.value = false
+  }
+}
 
+async function loadInitial() {
   loading.value = true
   error.value = ''
-
   try {
-    const response = await api.get('/bep-bar/orders', {
-      params: {
-        MaCS: selectedBranch.value,
-        q: keyword.value.trim() || undefined,
-        NoiCheBien: selectedStation.value || undefined,
-        TrangThaiMon: selectedStatus.value || undefined,
-        page: currentPage.value,
-        per_page: perPage.value
-      }
-    })
-
-    const result = response.data
-
-    orders.value = result.data || []
-
-    pagination.value = {
-      currentPage: result.current_page || 1,
-      lastPage: result.last_page || 1,
-      total: result.total || 0,
-      perPage: result.per_page || perPage.value
+    const { data } = await api.get('/branches')
+    branches.value = Array.isArray(data) ? data : []
+    if (branches.value.length) {
+      selectedBranch.value = String(branches.value[0].MaCS)
+      await loadItems(true)
+    } else {
+      error.value = 'Chưa có cơ sở đang hoạt động. Vui lòng tạo cơ sở trước.'
     }
-  } catch (err) {
-    orders.value = []
-
-    error.value = getErrorMessage(
-      err,
-      'Không thể tải danh sách món. Hãy kiểm tra kết nối API.'
-    )
+  } catch (e) {
+    error.value = readError(e, 'Không thể tải danh sách cơ sở.')
   } finally {
     loading.value = false
   }
 }
 
-async function loadNotifications() {
-  if (!selectedBranch.value) {
-    notifications.value = []
-    return
-  }
-
+async function markNotificationRead(item) {
   try {
-    const response = await api.get(
-      '/service-notifications',
-      {
-        params: {
-          MaCS: selectedBranch.value
-        }
-      }
-    )
-
-    notifications.value = Array.isArray(response.data)
-      ? response.data
-      : response.data?.data || []
-  } catch {
-    notifications.value = []
-  }
-}
-
-async function reload() {
-  await loadBranches()
-
-  if (selectedBranch.value) {
-    await Promise.all([
-      loadOrders(),
-      loadNotifications()
-    ])
-  }
-}
-
-async function changeBranch() {
-  currentPage.value = 1
-
-  await Promise.all([
-    loadOrders(),
-    loadNotifications()
-  ])
-}
-
-async function applyFilters() {
-  currentPage.value = 1
-  await loadOrders()
-}
-
-async function changePage(page) {
-  if (
-    page < 1 ||
-    page > pagination.value.lastPage ||
-    page === currentPage.value
-  ) {
-    return
-  }
-
-  currentPage.value = page
-  await loadOrders()
-}
-
-async function changePerPage() {
-  currentPage.value = 1
-  await loadOrders()
-}
-
-async function updateStatus(item) {
-  const next = nextStatus(item)
-
-  if (!next || busyId.value !== null) return
-
-  const confirmation = window.confirm(
-    next === 'Dang che bien'
-      ? `Bắt đầu chế biến món "${item.TenMon}"?`
-      : `Xác nhận món "${item.TenMon}" đã hoàn tất?`
-  )
-
-  if (!confirmation) return
-
-  busyId.value = item.MaCTOrder
-  error.value = ''
-
-  try {
-    await api.patch(
-      `/bep-bar/items/${item.MaCTOrder}/status`,
-      {
-        TrangThaiMon: next
-      }
-    )
-
-    await Promise.all([
-      loadOrders(),
-      loadNotifications()
-    ])
-  } catch (err) {
-    error.value = getErrorMessage(
-      err,
-      'Không thể cập nhật trạng thái món.'
-    )
-  } finally {
-    busyId.value = null
-  }
-}
-
-async function markAsRead(item) {
-  if (item.DaDoc) return
-
-  try {
-    await api.put(
-      `/service-notifications/${item.MaCTOrder}/read`,
-      {},
-      {
-        params: {
-          MaCS: selectedBranch.value
-        }
-      }
-    )
-
+    await api.put(`/service-notifications/${item.MaTB || item.MaCTOrder}/read`, { MaCS: Number(selectedBranch.value) })
     item.DaDoc = true
-  } catch (err) {
-    error.value = getErrorMessage(
-      err,
-      'Không thể cập nhật thông báo.'
-    )
+    notifications.value = [...notifications.value]
+  } catch (e) {
+    error.value = readError(e, 'Không thể cập nhật thông báo.')
   }
 }
 
-onMounted(reload)
+async function changeDepartment(value) {
+  if (department.value === value) return
+  department.value = value
+  search.value = ''
+  selectedStatus.value = ''
+  page.value = 1
+  success.value = ''
+  await loadItems()
+}
+
+async function updateItem(item) {
+  const target = nextStatus(item)
+  if (!target || savingIds.value.includes(item.MaCTOrder)) return
+  savingIds.value = [...savingIds.value, item.MaCTOrder]
+  error.value = ''
+  success.value = ''
+  try {
+    const { data } = await api.patch(`/bep-bar/items/${item.MaCTOrder}/status`, {
+      MaCS: Number(selectedBranch.value),
+      BoPhan: department.value,
+      TrangThaiHienTai: item.TrangThaiMon,
+      TrangThaiMon: target
+    })
+    if (data.ThongBaoPhucVu) {
+      success.value = `${data.message} Người nhận: ${data.ThongBaoPhucVu.NhanVienPhuTrach} – bàn ${data.ThongBaoPhucVu.SoBan}.`
+    } else {
+      success.value = data.message || 'Đã cập nhật trạng thái món.'
+    }
+    await loadItems(true)
+  } catch (e) {
+    error.value = readError(e, 'Không thể cập nhật trạng thái món.')
+    await loadItems(true)
+  } finally {
+    savingIds.value = savingIds.value.filter(id => id !== item.MaCTOrder)
+  }
+}
+
+onMounted(async () => {
+  await loadInitial()
+  refreshTimer = window.setInterval(() => loadItems(true), 5000)
+})
+onUnmounted(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+})
 </script>
 
 <template>
-  <div class="bep-page">
-
-    <!-- Tiêu đề -->
-    <header class="bep-heading">
+  <section class="kitchen-page">
+    <div class="kitchen-heading">
       <div>
-        <div class="bep-eyebrow">
-          QUẢN LÝ VẬN HÀNH
-        </div>
-
-        <h1>Bếp / Bar</h1>
-
-        <p>
-          Tiếp nhận đơn hàng và theo dõi tiến độ chế biến
-          tại từng cơ sở.
-        </p>
+        <div class="kitchen-eyebrow">PHÂN HỆ 3 · VẬN HÀNH CHẾ BIẾN</div>
+        <h1>Bếp &amp; Bar</h1>
+        <p>Theo dõi món đã gửi, tiếp nhận và cập nhật tiến độ chế biến theo từng bộ phận.</p>
       </div>
-
-      <button
-        class="bep-refresh"
-        :disabled="loading"
-        @click="reload"
-      >
-        ↻ Làm mới dữ liệu
-      </button>
-    </header>
-
-    <!-- Lỗi -->
-    <div v-if="error" class="bep-error">
-      {{ error }}
-
-      <button @click="error = ''">×</button>
+      <div class="kitchen-heading-actions">
+        <label class="branch-field">
+          <span>Cơ sở</span>
+          <select v-model="selectedBranch" @change="loadItems()">
+            <option v-for="branch in branches" :key="branch.MaCS" :value="String(branch.MaCS)">
+              {{ branch.TenCS }}
+            </option>
+          </select>
+        </label>
+        <button class="refresh-button" :disabled="loading || refreshing" @click="loadItems()">
+          <span :class="{ spinning: refreshing || loading }">↻</span>
+          Làm mới
+        </button>
+      </div>
     </div>
 
-    <!-- Bộ lọc -->
-    <section class="bep-card bep-filters">
-      <div class="bep-field">
-        <label>Cơ sở</label>
+    <div class="department-switch" role="tablist" aria-label="Chọn bộ phận chế biến">
+      <button :class="{ active: department === 'Bep' }" @click="changeDepartment('Bep')">
+        <span class="department-icon">♨</span>
+        Bếp
+        <span class="department-count">{{ pendingCount + cookingCount }}</span>
+      </button>
+      <button :class="{ active: department === 'Bar' }" @click="changeDepartment('Bar')">
+        <span class="department-icon">◈</span>
+        Bar
+        <span class="department-count">{{ pendingCount + cookingCount }}</span>
+      </button>
+    </div>
 
-        <select
-          v-model="selectedBranch"
-          :disabled="branchesLoading"
-          @change="changeBranch"
-        >
-          <option
-            v-for="branch in branches"
-            :key="branch.MaCS"
-            :value="String(branch.MaCS)"
-          >
-            {{ branch.TenCS }}
-          </option>
-        </select>
+    <div class="kitchen-stats">
+      <div class="kitchen-stat">
+        <span class="stat-icon stat-new">◷</span>
+        <div><strong>{{ pendingCount }}</strong><small>Món mới</small></div>
       </div>
-
-      <div class="bep-field bep-search">
-        <label>Tìm kiếm</label>
-
-        <input
-          v-model="keyword"
-          placeholder="Tên món, mã món, order hoặc số bàn..."
-          @keyup.enter="applyFilters"
-        >
+      <div class="kitchen-stat">
+        <span class="stat-icon stat-cooking">♨</span>
+        <div><strong>{{ cookingCount }}</strong><small>Đang chế biến</small></div>
       </div>
-
-      <div class="bep-field">
-        <label>Bộ phận</label>
-
-        <select
-          v-model="selectedStation"
-          @change="applyFilters"
-        >
-          <option value="">Tất cả bộ phận</option>
-          <option value="Bep">Bếp</option>
-          <option value="Bar">Bar</option>
-        </select>
+      <div class="kitchen-stat">
+        <span class="stat-icon stat-complete">✓</span>
+        <div><strong>{{ completedCount }}</strong><small>Hoàn tất hôm nay</small></div>
       </div>
+      <div class="kitchen-stat kitchen-refresh-stat">
+        <span class="live-dot"></span>
+        <div><strong>Tự làm mới</strong><small>5 giây / lần</small></div>
+      </div>
+    </div>
 
-      <div class="bep-field">
-        <label>Trạng thái</label>
+    <div v-if="error" class="kitchen-alert error-alert">{{ error }}</div>
+    <div v-if="success" class="kitchen-alert success-alert">
+      <span>✓</span>{{ success }}
+      <button aria-label="Đóng thông báo" @click="success = ''">×</button>
+    </div>
 
-        <select
-          v-model="selectedStatus"
-          @change="applyFilters"
-        >
-          <option value="">Đang xử lý</option>
+    <div class="kitchen-toolbar">
+      <div class="board-title">
+        <h2>Bảng chế biến {{ department === 'Bep' ? 'Bếp' : 'Bar' }}</h2>
+        <span v-if="lastUpdated">Cập nhật {{ lastUpdated.toLocaleTimeString('vi-VN') }}</span>
+      </div>
+      <div class="kitchen-filters">
+        <select v-model="selectedStatus" aria-label="Lọc trạng thái món" @change="page = 1; loadItems()">
+          <option value="">Đang xử lý và hoàn tất hôm nay</option>
           <option value="Cho che bien">Chờ chế biến</option>
+          <option value="Da nhan">Đã nhận</option>
           <option value="Dang che bien">Đang chế biến</option>
           <option value="Hoan tat">Hoàn tất</option>
-          <option value="Tat ca">Tất cả món</option>
+          <option value="Tat ca">Tất cả trạng thái</option>
         </select>
+        <label class="kitchen-search">
+          <span>⌕</span>
+          <input v-model="search" type="search" placeholder="Tìm theo bàn, món, order..." />
+        </label>
       </div>
+    </div>
 
-      <button
-        class="bep-search-btn"
-        @click="applyFilters"
-      >
-        Tìm kiếm
-      </button>
+    <div v-if="loading && !items.length" class="kitchen-loading">
+      <span class="loading-spinner"></span>
+      Đang tải danh sách món...
+    </div>
+
+    <div v-else class="kitchen-board">
+      <section class="board-column column-new">
+        <header class="column-header">
+          <div><span class="column-dot"></span><h3>Mới</h3></div>
+          <span class="column-count">{{ newItems.length }}</span>
+        </header>
+        <div v-if="newItems.length" class="ticket-list">
+          <article v-for="item in newItems" :key="item.MaCTOrder" class="kitchen-ticket">
+            <div class="ticket-topline">
+              <strong>Bàn {{ item.SoBan }}</strong>
+              <span>Order #{{ item.MaOrder }}</span>
+            </div>
+            <div class="ticket-area">{{ item.TenKV }}</div>
+            <h4>{{ item.TenMon }}</h4>
+            <div class="ticket-quantity">× {{ item.SoLuong }} <small>{{ item.DonViTinh }}</small></div>
+            <div v-if="item.GhiChu" class="ticket-note"><b>Ghi chú:</b> {{ item.GhiChu }}</div>
+            <div class="ticket-details">
+              <span>Phục vụ: {{ item.NhanVienPhuTrach }}</span>
+              <span>{{ receivedText(item) }}</span>
+            </div>
+            <div class="ticket-bottom">
+              <span class="ticket-status" :class="item.TrangThaiMon === 'Da nhan' ? 'status-accepted' : 'status-waiting'">
+                {{ statusLabel(item.TrangThaiMon) }}
+              </span>
+              <button class="ticket-action action-new" :disabled="savingIds.includes(item.MaCTOrder)" @click="updateItem(item)">
+                {{ savingIds.includes(item.MaCTOrder) ? 'Đang lưu...' : actionLabel(item) }}
+              </button>
+            </div>
+          </article>
+        </div>
+        <div v-else class="column-empty"><span>✓</span><strong>Không có món mới</strong><small>Món được gửi đến sẽ xuất hiện tại đây.</small></div>
+      </section>
+
+      <section class="board-column column-cooking">
+        <header class="column-header">
+          <div><span class="column-dot"></span><h3>Đang chế biến</h3></div>
+          <span class="column-count">{{ cookingItems.length }}</span>
+        </header>
+        <div v-if="cookingItems.length" class="ticket-list">
+          <article v-for="item in cookingItems" :key="item.MaCTOrder" class="kitchen-ticket">
+            <div class="ticket-topline">
+              <strong>Bàn {{ item.SoBan }}</strong>
+              <span>Order #{{ item.MaOrder }}</span>
+            </div>
+            <div class="ticket-area">{{ item.TenKV }}</div>
+            <h4>{{ item.TenMon }}</h4>
+            <div class="ticket-quantity">× {{ item.SoLuong }} <small>{{ item.DonViTinh }}</small></div>
+            <div v-if="item.GhiChu" class="ticket-note"><b>Ghi chú:</b> {{ item.GhiChu }}</div>
+            <div class="ticket-details">
+              <span>Phục vụ: {{ item.NhanVienPhuTrach }}</span>
+              <span>Bắt đầu: {{ dateText(item.ThoiGianBatDauCheBien) }}</span>
+            </div>
+            <div class="ticket-bottom">
+              <span class="ticket-status status-cooking">Đang chế biến</span>
+              <button class="ticket-action action-cooking" :disabled="savingIds.includes(item.MaCTOrder)" @click="updateItem(item)">
+                {{ savingIds.includes(item.MaCTOrder) ? 'Đang lưu...' : 'Hoàn tất món' }}
+              </button>
+            </div>
+          </article>
+        </div>
+        <div v-else class="column-empty"><span>♨</span><strong>Chưa có món đang chế biến</strong><small>Các món đã bắt đầu sẽ xuất hiện tại đây.</small></div>
+      </section>
+
+      <section class="board-column column-completed">
+        <header class="column-header">
+          <div><span class="column-dot"></span><h3>Hoàn tất</h3></div>
+          <span class="column-count">{{ completedItems.length }}</span>
+        </header>
+        <div v-if="completedItems.length" class="ticket-list">
+          <article v-for="item in completedItems" :key="item.MaCTOrder" class="kitchen-ticket ticket-finished">
+            <div class="ticket-topline">
+              <strong>Bàn {{ item.SoBan }}</strong>
+              <span>Order #{{ item.MaOrder }}</span>
+            </div>
+            <div class="ticket-area">{{ item.TenKV }}</div>
+            <h4>{{ item.TenMon }}</h4>
+            <div class="ticket-quantity">× {{ item.SoLuong }} <small>{{ item.DonViTinh }}</small></div>
+            <div v-if="item.GhiChu" class="ticket-note"><b>Ghi chú:</b> {{ item.GhiChu }}</div>
+            <div class="ticket-details">
+              <span>Phục vụ: {{ item.NhanVienPhuTrach }}</span>
+              <span>Hoàn tất: {{ dateText(item.ThoiGianHoanTat) }}</span>
+            </div>
+            <div class="ticket-bottom">
+              <span class="ticket-status status-complete">✓ Hoàn tất</span>
+              <span class="notified-label">Đã báo Phục vụ</span>
+            </div>
+          </article>
+        </div>
+        <div v-else class="column-empty"><span>✓</span><strong>Chưa có món hoàn tất</strong><small>Món hoàn tất trong hôm nay sẽ hiển thị tại đây.</small></div>
+      </section>
+    </div>
+
+    <section class="service-notifications">
+      <header class="notifications-heading">
+        <div>
+          <h2>Thông báo Phục vụ</h2>
+          <p>Món hoàn tất được gửi thông báo đến nhân viên phụ trách order.</p>
+        </div>
+        <span class="notification-unread">{{ unreadNotificationCount }} chưa đọc</span>
+      </header>
+      <div v-if="notifications.length" class="notification-list">
+        <article v-for="notice in notifications" :key="notice.MaTB" class="notification-row" :class="{ unread: !notice.DaDoc }">
+          <span class="notification-check">✓</span>
+          <div class="notification-copy">
+            <strong>{{ notice.NoiDung }}</strong>
+            <small>Bàn {{ notice.SoBan }} · Order #{{ notice.MaOrder }} · Người nhận: {{ notice.NhanVienNhan }} · {{ dateText(notice.ThoiGianTao) }}</small>
+          </div>
+          <button v-if="!notice.DaDoc" class="read-notification" @click="markNotificationRead(notice)">Đánh dấu đã đọc</button>
+          <span v-else class="read-label">Đã đọc</span>
+        </article>
+      </div>
+      <div v-else class="notifications-empty">Chưa có thông báo món hoàn tất tại cơ sở này.</div>
     </section>
 
-    <!-- Thống kê -->
-    <section class="bep-stats">
-      <article class="bep-stat">
-        <div class="bep-stat-icon orange">⌛</div>
-
-        <div>
-          <span>Chờ chế biến</span>
-          <strong>{{ waitingCount }}</strong>
-          <small>Trong trang hiện tại</small>
-        </div>
-      </article>
-
-      <article class="bep-stat">
-        <div class="bep-stat-icon blue">♨</div>
-
-        <div>
-          <span>Đang chế biến</span>
-          <strong>{{ cookingCount }}</strong>
-          <small>Trong trang hiện tại</small>
-        </div>
-      </article>
-
-      <article class="bep-stat">
-        <div class="bep-stat-icon green">✓</div>
-
-        <div>
-          <span>Tổng món phù hợp</span>
-          <strong>{{ pagination.total }}</strong>
-          <small>Theo bộ lọc hiện tại</small>
-        </div>
-      </article>
-
-      <article class="bep-stat">
-        <div class="bep-stat-icon purple">♢</div>
-
-        <div>
-          <span>Thông báo chưa đọc</span>
-          <strong>{{ unreadCount }}</strong>
-          <small>Trong 24 giờ gần nhất</small>
-        </div>
-      </article>
-    </section>
-
-    <!-- Danh sách món -->
-    <section class="bep-card bep-table-card">
-      <div class="bep-card-heading">
-        <div>
-          <h2>Danh sách món cần xử lý</h2>
-
-          <p>
-            Theo dõi món ăn và đồ uống được gửi từ Order/POS.
-          </p>
-        </div>
-
-        <span class="bep-total">
-          {{ pagination.total }} món
-        </span>
+    <div class="kitchen-pagination" v-if="total > perPage">
+      <span>{{ items.length }} món trên trang · {{ total }} món phù hợp</span>
+      <div>
+        <button :disabled="page <= 1" @click="page--; loadItems()">Trang trước</button>
+        <strong>Trang {{ page }} / {{ Math.max(1, Math.ceil(total / perPage)) }}</strong>
+        <button :disabled="page >= Math.ceil(total / perPage)" @click="page++; loadItems()">Trang sau</button>
       </div>
+    </div>
 
-      <div class="bep-table-wrap">
-        <table class="bep-table">
-          <thead>
-            <tr>
-              <th>Mã món</th>
-              <th>Tên món</th>
-              <th>Bàn / Khu vực</th>
-              <th>Số lượng</th>
-              <th>Bộ phận</th>
-              <th>Ghi chú</th>
-              <th>Trạng thái</th>
-              <th>Thời gian nhận</th>
-              <th>Thao tác</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr v-if="loading">
-              <td colspan="9" class="bep-empty">
-                Đang tải dữ liệu...
-              </td>
-            </tr>
-
-            <tr
-              v-else-if="!orders.length"
-            >
-              <td colspan="9" class="bep-empty">
-                <div class="bep-empty-icon">🍽</div>
-
-                <strong>Chưa có món phù hợp</strong>
-
-                <p>
-                  Các món được gửi từ Order/POS sẽ xuất hiện tại đây.
-                </p>
-              </td>
-            </tr>
-
-            <tr
-              v-for="item in orders"
-              :key="item.MaCTOrder"
-            >
-              <td class="bep-code">
-                #{{ item.MaCTOrder }}
-              </td>
-
-              <td>
-                <strong>{{ item.TenMon }}</strong>
-
-                <small>
-                  Order #{{ item.MaOrder }}
-                </small>
-              </td>
-
-              <td>
-                <strong>Bàn {{ item.SoBan }}</strong>
-
-                <small>{{ item.TenKV }}</small>
-              </td>
-
-              <td class="bep-quantity">
-                {{ item.SoLuong }}
-              </td>
-
-              <td>
-                <span class="bep-station">
-                  {{ stationLabel(item.NoiCheBien) }}
-                </span>
-              </td>
-
-              <td class="bep-note">
-                {{ item.GhiChu || 'Không có' }}
-              </td>
-
-              <td>
-                <span
-                  class="bep-status"
-                  :class="statusClass(item.TrangThaiMon)"
-                >
-                  {{ statusLabel(item.TrangThaiMon) }}
-                </span>
-              </td>
-
-              <td class="bep-time">
-                {{ formatDate(item.ThoiGianNhan) }}
-              </td>
-
-              <td>
-                <button
-                  v-if="nextStatus(item)"
-                  class="bep-action"
-                  :class="{
-                    'bep-action-finish':
-                      item.TrangThaiMon === 'Dang che bien'
-                  }"
-                  :disabled="busyId !== null"
-                  @click="updateStatus(item)"
-                >
-                  {{
-                    busyId === item.MaCTOrder
-                      ? 'Đang xử lý...'
-                      : actionLabel(item)
-                  }}
-                </button>
-
-                <span
-                  v-else
-                  class="bep-done"
-                >
-                  Đã xong
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Phân trang -->
-      <div class="bep-pagination">
-        <div class="bep-pagination-info">
-          Hiển thị
-          <strong>{{ firstRecord }}–{{ lastRecord }}</strong>
-          trong
-          <strong>{{ pagination.total }}</strong>
-          kết quả
-        </div>
-
-        <div class="bep-pagination-controls">
-          <label>Hiển thị</label>
-
-          <select
-            v-model.number="perPage"
-            @change="changePerPage"
-          >
-            <option :value="10">10 dòng</option>
-            <option :value="20">20 dòng</option>
-            <option :value="50">50 dòng</option>
-          </select>
-
-          <button
-            :disabled="currentPage <= 1 || loading"
-            @click="changePage(currentPage - 1)"
-          >
-            ‹
-          </button>
-
-          <button
-            v-for="page in pageNumbers"
-            :key="page"
-            :class="{ active: currentPage === page }"
-            :disabled="loading"
-            @click="changePage(page)"
-          >
-            {{ page }}
-          </button>
-
-          <button
-            :disabled="
-              currentPage >= pagination.lastPage || loading
-            "
-            @click="changePage(currentPage + 1)"
-          >
-            ›
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Thông báo -->
-    <section class="bep-card bep-notifications">
-      <div class="bep-card-heading">
-        <div>
-          <h2>Thông báo Bếp/Bar</h2>
-
-          <p>
-            Các món mới được gửi đến bộ phận chế biến trong 24 giờ gần nhất.
-          </p>
-        </div>
-
-        <span class="bep-notification-count">
-          {{ unreadCount }} chưa đọc
-        </span>
-      </div>
-
-      <div
-        v-if="!notifications.length"
-        class="bep-empty-notification"
-      >
-        Chưa có thông báo mới.
-      </div>
-
-      <article
-        v-for="notification in notifications"
-        :key="notification.MaCTOrder"
-        class="bep-notification-item"
-        :class="{ unread: !notification.DaDoc }"
-      >
-        <div class="bep-notification-icon">
-          {{ notification.NoiCheBien === 'Bar' ? '🥤' : '🍳' }}
-        </div>
-
-        <div class="bep-notification-content">
-          <strong>{{ notification.TenMon }}</strong>
-
-          <p>
-            Bàn {{ notification.SoBan }}
-            · Số lượng {{ notification.SoLuong }}
-            · {{ stationLabel(notification.NoiCheBien) }}
-          </p>
-
-          <small>
-            {{ formatDate(notification.ThoiGianNhan) }}
-          </small>
-        </div>
-
-        <button
-          v-if="!notification.DaDoc"
-          class="bep-read-btn"
-          @click="markAsRead(notification)"
-        >
-          Đánh dấu đã đọc
-        </button>
-
-        <span v-else class="bep-read-label">
-          Đã đọc
-        </span>
-      </article>
-    </section>
-
-  </div>
+    <div class="kitchen-footnote">
+      <span>Quy trình: Chờ chế biến → Đã nhận → Đang chế biến → Hoàn tất.</span>
+      <span>Chỉ bộ phận phụ trách mới được cập nhật trạng thái món.</span>
+    </div>
+  </section>
 </template>
 
 <style scoped>
-.bep-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  width: 100%;
-  color: #193047;
-}
-
-.bep-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-
-.bep-eyebrow {
-  color: #c27b32;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 1.3px;
-  margin-bottom: 8px;
-}
-
-.bep-heading h1 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 800;
-}
-
-.bep-heading p,
-.bep-card-heading p {
-  color: #8191a5;
-  font-size: 13px;
-  margin: 7px 0 0;
-}
-
-.bep-card {
-  background: #fff;
-  border: 1px solid #e1e8f0;
-  border-radius: 13px;
-  padding: 20px;
-  box-shadow: 0 5px 18px rgba(28, 53, 78, 0.035);
-}
-
-.bep-refresh,
-.bep-search-btn {
-  border: 1px solid #dce5ef;
-  background: #fff;
-  color: #244763;
-  border-radius: 8px;
-  padding: 11px 16px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.bep-refresh:hover {
-  background: #f5f8fc;
-}
-
-.bep-refresh:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.bep-filters {
-  display: grid;
-  grid-template-columns: 1.2fr 1.7fr 1fr 1fr auto;
-  align-items: end;
-  gap: 13px;
-}
-
-.bep-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.bep-field label,
-.bep-pagination-controls label {
-  font-size: 11px;
-  color: #62788e;
-  font-weight: 700;
-}
-
-.bep-field input,
-.bep-field select,
-.bep-pagination-controls select {
-  height: 41px;
-  width: 100%;
-  min-width: 0;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-  background: #fff;
-  padding: 0 11px;
-  color: #29445d;
-  font-size: 12px;
-  outline: none;
-}
-
-.bep-field input:focus,
-.bep-field select:focus {
-  border-color: #4b84ad;
-  box-shadow: 0 0 0 3px rgba(75, 132, 173, 0.1);
-}
-
-.bep-search-btn {
-  height: 41px;
-  background: #244763;
-  color: #fff;
-  border-color: #244763;
-}
-
-.bep-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.bep-stat {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  background: #fff;
-  border: 1px solid #e1e8f0;
-  border-radius: 12px;
-  padding: 19px;
-  min-width: 0;
-}
-
-.bep-stat-icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  border-radius: 11px;
-  font-size: 22px;
-}
-
-.bep-stat-icon.orange {
-  background: #fff4e7;
-  color: #c77c27;
-}
-
-.bep-stat-icon.blue {
-  background: #eaf2fb;
-  color: #3978bd;
-}
-
-.bep-stat-icon.green {
-  background: #e8f6ef;
-  color: #25936c;
-}
-
-.bep-stat-icon.purple {
-  background: #f2edfc;
-  color: #8a62ca;
-}
-
-.bep-stat span,
-.bep-stat small {
-  display: block;
-  color: #8091a5;
-  font-size: 11px;
-}
-
-.bep-stat strong {
-  display: block;
-  font-size: 25px;
-  margin: 3px 0;
-}
-
-.bep-card-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  margin-bottom: 17px;
-}
-
-.bep-card-heading h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.bep-total,
-.bep-notification-count {
-  color: #59748e;
-  background: #f0f5fa;
-  padding: 7px 11px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.bep-table-wrap {
-  overflow-x: auto;
-  width: 100%;
-}
-
-.bep-table {
-  width: 100%;
-  min-width: 1050px;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.bep-table th {
-  background: #f5f8fb;
-  color: #647c92;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: left;
-  padding: 14px 12px;
-  white-space: nowrap;
-}
-
-.bep-table td {
-  padding: 15px 12px;
-  border-bottom: 1px solid #edf1f5;
-  vertical-align: middle;
-}
-
-.bep-table tbody tr:hover {
-  background: #fafcff;
-}
-
-.bep-code {
-  color: #6584a2;
-  font-weight: 700;
-}
-
-.bep-table td strong {
-  display: block;
-  color: #29445d;
-}
-
-.bep-table td small {
-  display: block;
-  color: #91a0b0;
-  margin-top: 5px;
-  font-size: 10px;
-}
-
-.bep-quantity {
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.bep-station {
-  display: inline-block;
-  background: #f0f4f8;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-weight: 700;
-  color: #536e86;
-  white-space: nowrap;
-}
-
-.bep-note {
-  max-width: 150px;
-  color: #718398;
-  overflow-wrap: anywhere;
-}
-
-.bep-time {
-  color: #718398;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
-.bep-status {
-  display: inline-block;
-  border-radius: 20px;
-  padding: 6px 10px;
-  font-size: 10px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.status-waiting {
-  background: #fff3df;
-  color: #b97920;
-}
-
-.status-cooking {
-  background: #eaf2ff;
-  color: #3976bd;
-}
-
-.status-completed {
-  background: #e5f5ec;
-  color: #27865e;
-}
-
-.status-cancelled {
-  background: #fceaea;
-  color: #c04c4c;
-}
-
-.bep-action {
-  border: 0;
-  border-radius: 7px;
-  background: #244763;
-  color: #fff;
-  padding: 9px 11px;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.bep-action-finish {
-  background: #25845f;
-}
-
-.bep-action:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.bep-done,
-.bep-read-label {
-  color: #27865e;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.bep-empty {
-  text-align: center;
-  padding: 45px 15px !important;
-  color: #8b9bad;
-}
-
-.bep-empty-icon {
-  font-size: 30px;
-  margin-bottom: 10px;
-}
-
-.bep-empty p {
-  font-size: 11px;
-  margin-bottom: 0;
-}
-
-.bep-pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 15px;
-  padding-top: 18px;
-}
-
-.bep-pagination-info {
-  color: #7c8fa3;
-  font-size: 11px;
-}
-
-.bep-pagination-info strong {
-  color: #29445d;
-}
-
-.bep-pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.bep-pagination-controls select {
-  width: 100px;
-  height: 34px;
-  margin-right: 8px;
-}
-
-.bep-pagination-controls button {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid #dce5ef;
-  background: #fff;
-  color: #506b83;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.bep-pagination-controls button.active {
-  background: #244763;
-  color: #fff;
-  border-color: #244763;
-}
-
-.bep-pagination-controls button:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.bep-notification-item {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 14px 5px;
-  border-bottom: 1px solid #edf1f5;
-}
-
-.bep-notification-item:last-child {
-  border-bottom: 0;
-}
-
-.bep-notification-item.unread {
-  background: #f8fbff;
-}
-
-.bep-notification-icon {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  background: #f1f5f9;
-  border-radius: 10px;
-  flex-shrink: 0;
-  font-size: 20px;
-}
-
-.bep-notification-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.bep-notification-content strong {
-  font-size: 12px;
-}
-
-.bep-notification-content p {
-  font-size: 11px;
-  color: #75899d;
-  margin: 5px 0;
-}
-
-.bep-notification-content small {
-  color: #98a6b4;
-  font-size: 10px;
-}
-
-.bep-read-btn {
-  border: 1px solid #dce5ef;
-  background: #fff;
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 10px;
-  color: #466782;
-  cursor: pointer;
-}
-
-.bep-empty-notification {
-  text-align: center;
-  color: #8b9bad;
-  font-size: 12px;
-  padding: 25px;
-}
-
-.bep-error {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 15px;
-  background: #fff0f0;
-  border: 1px solid #ffd4d4;
-  color: #b53d3d;
-  border-radius: 8px;
-  font-size: 12px;
-}
-
-.bep-error button {
-  border: 0;
-  background: transparent;
-  font-size: 18px;
-  color: inherit;
-  cursor: pointer;
-}
-
-@media (max-width: 1100px) {
-  .bep-filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .bep-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 650px) {
-  .bep-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .bep-heading h1 {
-    font-size: 23px;
-  }
-
-  .bep-filters,
-  .bep-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .bep-card {
-    padding: 14px;
-  }
-
-  .bep-pagination {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .bep-pagination-controls {
-    flex-wrap: wrap;
-  }
-}
+.kitchen-filters { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.kitchen-filters > select { width:auto; min-width:175px; min-height:36px; }
+.kitchen-pagination {display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin:15px 0; font-size:11px; color:#718194;}
+.kitchen-pagination > div {display:flex; align-items:center; gap:9px;}
+.kitchen-pagination button {width:auto; padding:8px 12px; border:1px solid #dce5ec; border-radius:7px; background:white; color:#29445d; font-size:11px;}
+.kitchen-pagination button:disabled {opacity:.4; cursor:not-allowed;}
+
+.kitchen-page { color: #203348; }
+.kitchen-heading { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:24px; }
+.kitchen-eyebrow { color:#ad7941; font-size:10px; font-weight:800; letter-spacing:1.5px; margin-bottom:9px; }
+.kitchen-heading h1 { margin:0; font-size:27px; line-height:1.2; color:#172c40; letter-spacing:-.6px; }
+.kitchen-heading p { margin:9px 0 0; color:#8190a0; font-size:12px; }
+.kitchen-heading-actions { display:flex; align-items:flex-end; gap:10px; }
+.branch-field { display:flex; flex-direction:column; gap:6px; min-width:190px; color:#718194; font-size:10px; font-weight:700; }
+.branch-field select { height:39px; min-width:190px; border:1px solid #dfe6ed; border-radius:8px; padding:0 12px; color:#34495e; background:#fff; outline:none; font-size:12px; }
+.refresh-button { height:39px; border:1px solid #dfe6ed; border-radius:8px; padding:0 14px; display:flex; align-items:center; gap:7px; color:#314a60; background:#fff; font-size:11px; font-weight:700; }
+.refresh-button:disabled { opacity:.55; cursor:wait; }
+.refresh-button span { font-size:19px; line-height:1; }
+.spinning { display:inline-block; animation:spin 1s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.department-switch { display:inline-flex; gap:5px; padding:5px; background:#e9eef3; border-radius:11px; margin-bottom:18px; }
+.department-switch button { display:flex; align-items:center; gap:8px; min-width:126px; justify-content:center; border:0; border-radius:8px; padding:10px 16px; color:#6f8091; background:transparent; font-size:12px; font-weight:700; }
+.department-switch button.active { color:#fff; background:#1e3a52; box-shadow:0 3px 9px rgba(23,44,64,.16); }
+.department-icon { font-size:16px; color:#d4a66a; }
+.department-count { min-width:20px; padding:2px 6px; border-radius:20px; background:rgba(255,255,255,.17); font-size:10px; }
+.kitchen-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:22px; }
+.kitchen-stat { min-height:76px; display:flex; align-items:center; gap:13px; padding:13px 16px; background:#fff; border:1px solid #e6ebf0; border-radius:11px; box-shadow:0 3px 12px rgba(28,45,64,.025); }
+.stat-icon { width:36px; height:36px; flex:0 0 36px; display:grid; place-items:center; border-radius:10px; font-size:18px; font-weight:800; }
+.stat-new { color:#b07b3d; background:#fbf1e4; }
+.stat-cooking { color:#397ca9; background:#e9f3fa; }
+.stat-complete { color:#27865f; background:#e8f6ef; }
+.kitchen-stat strong { display:block; color:#203348; font-size:20px; line-height:1.1; }
+.kitchen-stat small { display:block; margin-top:5px; color:#8492a1; font-size:10px; }
+.kitchen-refresh-stat { justify-content:center; }
+.kitchen-refresh-stat strong { font-size:12px; }
+.live-dot { width:9px; height:9px; border-radius:50%; background:#2ca875; box-shadow:0 0 0 4px #e5f5ed; }
+.kitchen-alert { display:flex; align-items:center; gap:9px; padding:11px 14px; border-radius:8px; margin-bottom:12px; font-size:11px; }
+.error-alert { color:#a83f3a; background:#fff0ef; border:1px solid #f4d5d2; }
+.success-alert { color:#246d4f; background:#edf8f2; border:1px solid #d4ecdf; }
+.success-alert button { margin-left:auto; border:0; background:transparent; color:inherit; font-size:18px; }
+.kitchen-toolbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin:0 0 13px; }
+.board-title h2 { margin:0; color:#203348; font-size:15px; }
+.board-title span { display:block; margin-top:5px; color:#94a0ad; font-size:10px; }
+.kitchen-search { display:flex; align-items:center; gap:8px; width:260px; height:36px; padding:0 11px; border:1px solid #e1e7ed; border-radius:8px; background:#fff; color:#9aa7b3; }
+.kitchen-search span { font-size:20px; }
+.kitchen-search input { width:100%; border:0; outline:0; color:#33485c; font-size:11px; background:transparent; }
+.kitchen-board { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:13px; align-items:start; }
+.board-column { min-height:390px; padding:12px; border:1px solid #e4eaf0; border-radius:11px; background:#f8fafc; }
+.column-header { display:flex; align-items:center; justify-content:space-between; padding:2px 2px 12px; border-bottom:1px solid #e6ebf0; margin-bottom:11px; }
+.column-header > div { display:flex; align-items:center; gap:8px; }
+.column-header h3 { margin:0; color:#34495e; font-size:12px; }
+.column-dot { width:8px; height:8px; border-radius:50%; background:#d5a15c; }
+.column-cooking .column-dot { background:#5293bd; }
+.column-completed .column-dot { background:#36a477; }
+.column-count { min-width:23px; padding:3px 7px; text-align:center; border-radius:20px; background:#edf1f5; color:#627386; font-size:10px; font-weight:800; }
+.ticket-list { display:flex; flex-direction:column; gap:10px; }
+.kitchen-ticket { padding:13px; border:1px solid #e6ebf0; border-radius:9px; background:#fff; box-shadow:0 3px 10px rgba(30,51,72,.025); }
+.ticket-topline { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ticket-topline strong { color:#1f3a52; font-size:13px; }
+.ticket-topline span { color:#9aa6b1; font-size:9px; }
+.ticket-area { margin-top:4px; color:#a0aab5; font-size:9px; }
+.kitchen-ticket h4 { margin:10px 0 3px; color:#263e54; font-size:13px; line-height:1.4; }
+.ticket-quantity { color:#b17d43; font-size:13px; font-weight:800; }
+.ticket-quantity small { color:#96a2ae; font-size:9px; font-weight:500; }
+.ticket-note { margin-top:9px; padding:7px 8px; border-radius:6px; color:#7d5b32; background:#fbf5ec; font-size:10px; line-height:1.5; overflow-wrap:anywhere; }
+.ticket-details { display:flex; flex-direction:column; gap:4px; margin-top:10px; color:#97a3ae; font-size:9px; }
+.ticket-bottom { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #eef1f4; }
+.ticket-status { display:inline-flex; align-items:center; padding:5px 8px; border-radius:20px; font-size:9px; font-weight:800; white-space:nowrap; }
+.status-waiting { color:#9b6b2f; background:#fbf1e4; }
+.status-accepted { color:#52738d; background:#edf3f8; }
+.status-cooking { color:#2c75a4; background:#eaf4fb; }
+.status-complete { color:#26825c; background:#e8f6ef; }
+.ticket-action { min-height:30px; padding:0 10px; border:0; border-radius:6px; font-size:9px; font-weight:800; white-space:nowrap; }
+.ticket-action:disabled { opacity:.55; cursor:wait; }
+.action-new { color:#fff; background:#ad7941; }
+.action-cooking { color:#fff; background:#397da7; }
+.ticket-finished { border-color:#dceee4; }
+.notified-label { color:#27865f; font-size:9px; font-weight:700; white-space:nowrap; }
+.column-empty { min-height:230px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:22px; text-align:center; color:#a3afb9; }
+.column-empty > span { width:34px; height:34px; display:grid; place-items:center; margin-bottom:10px; border-radius:50%; color:#8a9aa8; background:#edf1f5; font-size:17px; }
+.column-empty strong { color:#718294; font-size:11px; }
+.column-empty small { max-width:180px; margin-top:6px; color:#a0acb7; font-size:9px; line-height:1.5; }
+.kitchen-loading { min-height:300px; display:flex; justify-content:center; align-items:center; gap:10px; color:#8190a0; font-size:12px; }
+.loading-spinner { width:18px; height:18px; border:2px solid #e5ebf0; border-top-color:#b17d43; border-radius:50%; animation:spin .8s linear infinite; }
+.kitchen-footnote { display:flex; justify-content:space-between; gap:15px; margin-top:13px; color:#9aa6b2; font-size:9px; }
+.service-notifications { margin-top:18px; padding:15px; border:1px solid #e5eaf0; border-radius:11px; background:#fff; }
+.notifications-heading { display:flex; align-items:center; justify-content:space-between; gap:15px; padding-bottom:12px; border-bottom:1px solid #edf0f3; }
+.notifications-heading h2 { margin:0; color:#203348; font-size:13px; }
+.notifications-heading p { margin:5px 0 0; color:#97a3ae; font-size:9px; }
+.notification-unread { padding:5px 9px; border-radius:20px; color:#94672f; background:#fbf2e7; font-size:9px; font-weight:800; white-space:nowrap; }
+.notification-list { display:flex; flex-direction:column; }
+.notification-row { display:flex; align-items:center; gap:11px; padding:11px 2px; border-bottom:1px solid #f0f2f5; }
+.notification-row:last-child { border-bottom:0; }
+.notification-row.unread { background:#fffdf9; }
+.notification-check { width:28px; height:28px; flex:0 0 28px; display:grid; place-items:center; border-radius:50%; color:#27865f; background:#e8f6ef; font-size:13px; font-weight:800; }
+.notification-copy { min-width:0; flex:1; }
+.notification-copy strong { display:block; color:#34495e; font-size:10px; font-weight:700; }
+.notification-copy small { display:block; margin-top:5px; color:#9aa6b1; font-size:9px; }
+.read-notification { padding:6px 9px; border:1px solid #dce5ec; border-radius:6px; color:#597185; background:#fff; font-size:9px; white-space:nowrap; }
+.read-label { color:#9aa6b1; font-size:9px; white-space:nowrap; }
+.notifications-empty { padding:22px 10px 12px; text-align:center; color:#9aa6b1; font-size:10px; }
+@media (max-width: 1100px) { .kitchen-board { grid-template-columns:1fr; } .board-column { min-height:220px; } .column-empty { min-height:140px; } .kitchen-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width: 680px) { .kitchen-heading { align-items:stretch; flex-direction:column; } .kitchen-heading-actions { align-items:stretch; } .branch-field, .branch-field select { min-width:0; width:100%; } .kitchen-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .kitchen-toolbar { align-items:stretch; flex-direction:column; } .kitchen-search { width:100%; } .kitchen-footnote { flex-direction:column; } }
 </style>
