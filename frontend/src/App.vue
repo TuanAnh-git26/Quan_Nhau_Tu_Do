@@ -21,6 +21,8 @@ const mobileMenuOpen = ref(false)
 const user = ref(null)
 const loginBusy = ref(false)
 const loginError = ref('')
+const logoutError = ref('')
+const sessionChecking = ref(true)
 const loginBranches = ref([])
 const branchesBusy = ref(false)
 const loginForm = ref({
@@ -239,6 +241,26 @@ async function loadMe() {
   }
 }
 
+// KHÔI PHỤC PHIÊN SAU KHI F5 (chạy nền, không chặn form đăng nhập)
+async function restoreSession() {
+  const timer = window.setTimeout(() => {
+    sessionChecking.value = false
+  }, 1500)
+
+  try {
+    const { data } = await api.get('/auth/me', { timeout: 6000 })
+    if (!user.value) {
+      acceptProfile(data)
+      currentPage.value = 'dashboard'
+    }
+  } catch {
+    // 401/419 hoặc lỗi mạng: giữ form đăng nhập
+  } finally {
+    window.clearTimeout(timer)
+    sessionChecking.value = false
+  }
+}
+
 // ĐĂNG NHẬP
 async function login() {
   if (loginBusy.value) return
@@ -271,6 +293,7 @@ async function login() {
 
 // ĐĂNG XUẤT
 async function logout() {
+  logoutError.value = ''
   try {
     await api.post('/auth/logout')
 
@@ -281,7 +304,7 @@ async function logout() {
       user.value = null
       currentPage.value = 'dashboard'
     } else {
-      alert(messageFrom(e, 'Không thể đăng xuất. Vui lòng thử lại.'))
+      logoutError.value = messageFrom(e, 'Không thể đăng xuất. Vui lòng thử lại.')
     }
   }
 }
@@ -303,6 +326,7 @@ onMounted(() => {
 
   readCachedBranches()
   void loadLoginBranches()
+  void restoreSession()
 })
 
 onUnmounted(() => {
@@ -311,9 +335,17 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- ĐANG KIỂM TRA PHIÊN -->
+  <div
+    v-if="!user && sessionChecking"
+    class="grid min-h-screen place-items-center bg-slate-100 text-sm text-slate-500"
+  >
+    Đang kiểm tra phiên…
+  </div>
+
   <!-- GIAO DIỆN ĐĂNG NHẬP -->
   <div
-    v-if="!user"
+    v-else-if="!user"
     class="grid min-h-screen place-items-center bg-slate-100 p-4"
   >
     <form
@@ -520,6 +552,7 @@ onUnmounted(() => {
             >
               Đăng xuất
             </button>
+            <p v-if="logoutError" class="mt-1 text-xs text-red-600">{{ logoutError }}</p>
           </div>
         </div>
       </header>

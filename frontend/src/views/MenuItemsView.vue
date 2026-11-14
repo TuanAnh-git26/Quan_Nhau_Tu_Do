@@ -128,7 +128,7 @@ async function loadBase() {
       selectedBranch.value = String(branches.value[0].MaCS)
     }
 
-  } catch (e) {
+  } catch {
     error.value =
       'Không tải được danh mục hoặc cơ sở. Vui lòng kiểm tra kết nối máy chủ.'
   }

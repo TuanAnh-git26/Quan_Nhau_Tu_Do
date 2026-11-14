@@ -181,12 +181,29 @@ async function save() {
     editing.value = false; success.value = 'Đã lưu dữ liệu thành công.'; await base(); await load()
   } catch(e) { error.value = err(e) || e.message } finally { busy.value = false }
 }
-async function action(row, actionName) {
+const inputModal = ref({ open: false, row: null, kind: '', value: '', error: '' })
+function openInput(row, kind) {
+  inputModal.value = { open: true, row, kind, value: kind === 'status' ? (row.TrangThai || 'Dang lam') : '', error: '' }
+}
+async function submitInput() {
+  if (busy.value) return
+  const m = inputModal.value
+  const value = String(m.value || '').trim()
+  if (m.kind === 'return' && !value) { m.error = 'Vui lòng nhập lý do trả lại.'; return }
+  if (m.kind === 'return' && value.length > 500) { m.error = 'Lý do tối đa 500 ký tự.'; return }
+  if (m.kind === 'status' && !['Dang lam', 'Tam nghi', 'Da nghi'].includes(value)) { m.error = 'Trạng thái không hợp lệ.'; return }
+  const row = m.row, kind = m.kind
+  inputModal.value = { open: false, row: null, kind: '', value: '', error: '' }
+  await action(row, kind, value)
+}
+async function action(row, actionName, inputValue) {
   const ids = { employees:'MaNV', positions:'MaVT', contracts:'MaHDLD', shifts:'MaCa', attendance:'MaCC', payrolls:'MaBL' }
   const id = row[ids[tab.value]]; let url = `/hr/${tab.value}/${id}`; let payload = {}
-  if (actionName === 'status') { const value = prompt('Trạng thái mới (Dang lam / Tam nghi / Da nghi):', row.TrangThai); if (!value) return; payload.TrangThai = value; url += '/status' }
-  if (actionName === 'return') { const reason = prompt('Lý do trả lại bảng lương:'); if (!reason) return; payload.LyDo = reason }
-  if (!confirm('Xác nhận thao tác này?')) return
+  if (busy.value) return
+  if ((actionName === 'status' || actionName === 'return') && inputValue === undefined) { openInput(row, actionName); return }
+  if (actionName === 'status') { payload.TrangThai = inputValue; url += '/status' }
+  else if (actionName === 'return') { payload.LyDo = inputValue }
+  else if (!confirm('Xác nhận thao tác này?')) return
   busy.value = true; error.value = ''
   try {
     if (actionName === 'delete') await api.delete(url)
@@ -282,6 +299,26 @@ onMounted(async () => { await base(); await load() })
             <input v-else v-model="form[key]" :type="kind" :step="kind==='number'?'0.01':undefined" class="mt-1 w-full rounded-lg border p-2" />
           </label>
         </div><div class="mt-5 flex justify-end gap-2"><button type="button" class="rounded-lg border px-4 py-2" @click="editing=false">Hủy</button><button :disabled="busy" type="submit" class="rounded-lg bg-slate-800 px-4 py-2 text-white disabled:opacity-50">Lưu dữ liệu</button></div>
+      </form>
+    </div>
+    <div v-if="inputModal.open" class="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" @click.self="inputModal.open=false">
+      <form @submit.prevent="submitInput" class="w-full max-w-md space-y-3 rounded-xl bg-white p-5 shadow-2xl">
+        <h2 class="text-lg font-bold">{{ inputModal.kind === 'status' ? 'Đổi trạng thái nhân viên' : 'Trả lại bảng lương' }}</h2>
+        <p v-if="inputModal.error" class="rounded bg-rose-50 p-2 text-xs text-rose-700">{{ inputModal.error }}</p>
+        <label v-if="inputModal.kind === 'status'" class="block text-xs font-semibold">Trạng thái mới
+          <select v-model="inputModal.value" class="mt-1 w-full rounded-lg border p-2">
+            <option value="Dang lam">Đang làm</option>
+            <option value="Tam nghi">Tạm nghỉ</option>
+            <option value="Da nghi">Đã nghỉ</option>
+          </select>
+        </label>
+        <label v-else class="block text-xs font-semibold">Lý do trả lại (bắt buộc)
+          <textarea v-model="inputModal.value" rows="4" maxlength="500" class="mt-1 w-full rounded-lg border p-2"></textarea>
+        </label>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="rounded-lg border px-4 py-2" @click="inputModal.open=false">Hủy</button>
+          <button :disabled="busy" type="submit" class="rounded-lg bg-slate-800 px-4 py-2 text-white disabled:opacity-50">Xác nhận</button>
+        </div>
       </form>
     </div>
   </div>

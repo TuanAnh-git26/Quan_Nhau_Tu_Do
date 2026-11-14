@@ -175,6 +175,19 @@ watch(
         </button>
       </nav>
 
+      <!-- Số dòng mỗi trang -->
+      <label class="pagination-size">
+        <span>Số dòng</span>
+        <select
+          :value="safePageSize"
+          aria-label="Số dòng mỗi trang"
+          @change="changePageSize"
+        >
+          <option v-for="size in pageSizes" :key="size" :value="size">
+            {{ size }}
+          </option>
+        </select>
+      </label>
     </div>
   </div>
 </template>
@@ -308,5 +321,23 @@ watch(
   .pagination-size {
     flex-wrap: wrap;
   }
+}
+.pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8492a1;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pagination-size select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #3b4857;
+  font-size: 12px;
 }
 </style>

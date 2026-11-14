@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -64,6 +65,7 @@ class SystemAdminController extends Controller
             }
             $this->audit($request, 'Cap nhat quyen', 'PHAN_QUYEN', 'Vai trò #'.$id.': '.implode(', ', $data['Quyen']));
         });
+        Cache::forget('qntd:perm:'.$id);
         return response()->json(['message' => 'Đã lưu phân quyền.']);
     }
 

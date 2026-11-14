@@ -12,6 +12,8 @@ const has = uc => (props.user?.Quyen || []).includes('*') || (props.user?.Quyen 
 const maySeeMenu = computed(() => ['UC2.1', 'UC2.2', 'UC2.3'].some(has))
 const maySeeCategories = computed(() => ['UC2.1', 'UC2.2', 'UC2.4'].some(has))
 const maySeeFinance = computed(() => has('UC7.5'))
+const maySeeInventory = computed(() => has('UC4.1'))
+const canOpen = id => props.navigation.some(x => x.id === id)
 const quickLinks = computed(() => props.navigation.filter(x => x.id !== 'dashboard'))
 
 const branches = ref([])
@@ -25,6 +27,7 @@ const error = ref('')
 const categories = ref([])
 const menuItems = ref([])
 const finance = ref(null)
+const inventory = ref(null)
 let sequence = 0
 
 const activeCategories = computed(() => categories.value.filter(x => x.TrangThai === 'Dang hoat dong').length)
@@ -58,6 +61,7 @@ async function loadMetrics() {
   categories.value = []
   menuItems.value = []
   finance.value = null
+  inventory.value = null
   if (!selectedBranch.value) return
 
   if (from.value > to.value) {
@@ -72,6 +76,8 @@ async function loadMetrics() {
     params: { MaCS: selectedBranch.value, from: from.value, to: to.value },
   }) })
 
+  if (maySeeInventory.value) jobs.push({ name: 'Kho', key: 'inventory', task: api.get('/inventory/dashboard', { params: { MaCS: selectedBranch.value } }) })
+
   // Các nguồn dữ liệu độc lập được tải đồng thời. Một phần lỗi không làm mất tất cả dữ liệu.
   const results = await Promise.allSettled(jobs.map(x => x.task))
   if (id !== sequence) return // Bỏ kết quả cũ khi người dùng chọn cơ sở khác.
@@ -84,6 +90,8 @@ async function loadMetrics() {
       categories.value = Array.isArray(result.value.data) ? result.value.data : []
     } else if (key === 'menu') {
       menuItems.value = Array.isArray(result.value.data) ? result.value.data : []
+    } else if (key === 'inventory') {
+      inventory.value = result.value.data || {}
     } else {
       finance.value = result.value.data || {}
     }
@@ -140,6 +148,27 @@ onUnmounted(() => { sequence++ })
       </div>
       <p v-else-if="!loadingMetrics" class="text-sm text-slate-500">Chưa có số liệu tài chính cho bộ lọc đã chọn.</p>
       <p class="text-xs text-slate-500">Số liệu theo API báo cáo tài chính; chưa bao gồm đầy đủ giá vốn, chi phí lương và tất cả chi phí vận hành.</p>
+    </section>
+
+    <section v-if="(maySeeInventory && inventory) || (maySeeFinance && finance)" class="space-y-3">
+      <h2 class="text-lg font-bold">Cần xử lý</h2>
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <article v-if="maySeeInventory && inventory" class="rounded-xl border bg-white p-5">
+          <p class="text-sm text-slate-500">Đơn đặt hàng (PO) chờ duyệt</p>
+          <strong class="mt-2 block text-2xl" :class="inventory.POChoDuyet ? 'text-amber-600' : ''">{{ inventory.POChoDuyet || 0 }}</strong>
+          <button v-if="canOpen('inventory')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'inventory')">Mở Kho &amp; mua hàng →</button>
+        </article>
+        <article v-if="maySeeInventory && inventory" class="rounded-xl border bg-white p-5">
+          <p class="text-sm text-slate-500">Nguyên liệu dưới mức tồn tối thiểu</p>
+          <strong class="mt-2 block text-2xl" :class="inventory.SoNguyenLieuCanNhap ? 'text-rose-600' : ''">{{ inventory.SoNguyenLieuCanNhap || 0 }}</strong>
+          <button v-if="canOpen('inventory')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'inventory')">Xem tồn kho →</button>
+        </article>
+        <article v-if="maySeeFinance && finance" class="rounded-xl border bg-white p-5">
+          <p class="text-sm text-slate-500">Phiếu thu/chi chờ duyệt</p>
+          <strong class="mt-2 block text-2xl" :class="finance.PhieuChoDuyet ? 'text-amber-600' : ''">{{ finance.PhieuChoDuyet || 0 }}</strong>
+          <button v-if="canOpen('finance')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'finance')">Mở Tài chính →</button>
+        </article>
+      </div>
     </section>
 
     <section v-if="maySeeMenu || maySeeCategories" class="space-y-3">

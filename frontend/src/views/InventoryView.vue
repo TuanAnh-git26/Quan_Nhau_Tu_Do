@@ -274,6 +274,13 @@ async function openSupplierHistory(item) {
   } catch (err) { handleError(err, 'Không tải được lịch sử giao dịch nhà cung cấp.') }
 }
 
+// Khóa ổn định cho dòng nhập động (không đưa vào payload gửi API)
+const lineKeys = new WeakMap()
+let lineKeySeq = 0
+function lineKey(line) {
+  if (!lineKeys.has(line)) lineKeys.set(line, ++lineKeySeq)
+  return lineKeys.get(line)
+}
 function addPOLine() { poForm.value.items.push({ MaNL: '', SoLuong: 1, DonGia: 0 }) }
 function removePOLine(index) { if (poForm.value.items.length > 1) poForm.value.items.splice(index, 1) }
 function openPO() {
@@ -774,7 +781,7 @@ async function saveRecipe() {
       <div class="form-grid"><label>Nhà cung cấp <span>*</span><select v-model="poForm.MaNCC" required><option value="">Chọn nhà cung cấp</option><option v-for="item in suppliers.filter(x => x.TrangThai === 'Dang hop tac')" :key="item.MaNCC" :value="String(item.MaNCC)">{{ item.TenNCC }}</option></select></label><label>Người lập <span>*</span><select v-model="poForm.MaNV" required><option value="">Chọn nhân viên</option><option v-for="item in activeEmployees" :key="item.MaNV" :value="String(item.MaNV)">{{ item.HoTen }}</option></select></label></div>
       <div class="form-grid"><label>Ngày giao dự kiến<input v-model="poForm.NgayGiaoDuKien" type="date" /></label><label>Điều kiện thanh toán<input v-model.trim="poForm.DieuKienTT" maxlength="180" placeholder="Ví dụ: Thanh toán khi nhận hàng" /></label></div>
       <div class="inventory-line-heading"><strong>Chi tiết nguyên liệu</strong><button type="button" class="text-btn" @click="addPOLine">＋ Thêm dòng</button></div>
-      <div v-for="(line, index) in poForm.items" :key="index" class="inventory-form-line three-col">
+      <div v-for="(line, index) in poForm.items" :key="lineKey(line)" class="inventory-form-line three-col">
         <label>Nguyên liệu<select v-model="line.MaNL" required><option value="">Chọn nguyên liệu</option><option v-for="item in ingredients.filter(x => x.TrangThai === 'Dang su dung')" :key="item.MaNL" :value="String(item.MaNL)">{{ item.TenNL }} ({{ item.DonViTinh }})</option></select></label>
         <label>Số lượng<input v-model.number="line.SoLuong" type="number" min="0.001" step="0.001" required /></label>
         <label>Đơn giá<input v-model.number="line.DonGia" type="number" min="0" step="100" required /></label>
@@ -790,7 +797,7 @@ async function saveRecipe() {
       <div class="form-grid"><label>Nhà cung cấp <span>*</span><select v-model="receiptForm.MaNCC" required><option value="">Chọn nhà cung cấp</option><option v-for="item in suppliers.filter(x => x.TrangThai === 'Dang hop tac')" :key="item.MaNCC" :value="String(item.MaNCC)">{{ item.TenNCC }}</option></select></label><label>Người nhập <span>*</span><select v-model="receiptForm.MaNV" required><option value="">Chọn nhân viên</option><option v-for="item in activeEmployees" :key="item.MaNV" :value="String(item.MaNV)">{{ item.HoTen }}</option></select></label></div>
       <label>Chứng từ giao hàng<input v-model.trim="receiptForm.ChungTuNguon" maxlength="255" placeholder="Số hóa đơn / phiếu giao hàng (bắt buộc nếu không có PO)" /></label>
       <div class="inventory-line-heading"><strong>Hàng thực nhận</strong><button type="button" class="text-btn" @click="addReceiptLine">＋ Thêm dòng</button></div>
-      <div v-for="(line, index) in receiptForm.items" :key="index" class="inventory-form-line receipt-line">
+      <div v-for="(line, index) in receiptForm.items" :key="lineKey(line)" class="inventory-form-line receipt-line">
         <label>Nguyên liệu<select v-model="line.MaNL" required><option value="">Chọn nguyên liệu</option><option v-for="item in ingredients.filter(x => x.TrangThai === 'Dang su dung')" :key="item.MaNL" :value="String(item.MaNL)">{{ item.TenNL }}</option></select></label>
         <label>Số lượng nhận<input v-model.number="line.SoLuongNhap" type="number" min="0.001" step="0.001" required /></label>
         <label>Đơn giá<input v-model.number="line.DonGia" type="number" min="0" step="100" required /></label>
@@ -805,7 +812,7 @@ async function saveRecipe() {
       <div class="modal-heading"><div><p class="eyebrow">XUẤT KHO</p><h2>Xuất nguyên liệu theo FIFO</h2></div><button type="button" class="close-btn" @click="modal = ''">×</button></div>
       <div class="form-grid"><label>Bộ phận nhận <select v-model="issueForm.BoPhanNhan"><option value="Bep">Bếp</option><option value="Bar">Bar</option></select></label><label>Người lập <select v-model="issueForm.MaNV" required><option value="">Chọn nhân viên</option><option v-for="item in activeEmployees" :key="item.MaNV" :value="String(item.MaNV)">{{ item.HoTen }}</option></select></label></div>
       <div class="inventory-line-heading"><strong>Nguyên liệu cần xuất</strong><button type="button" class="text-btn" @click="addIssueLine">＋ Thêm dòng</button></div>
-      <div v-for="(line, index) in issueForm.items" :key="index" class="inventory-form-line two-col">
+      <div v-for="(line, index) in issueForm.items" :key="lineKey(line)" class="inventory-form-line two-col">
         <label>Nguyên liệu<select v-model="line.MaNL" required><option value="">Chọn nguyên liệu</option><option v-for="item in stock.filter(x => x.TrangThai === 'Dang su dung')" :key="item.MaNL" :value="String(item.MaNL)">{{ item.TenNL }} · tồn {{ quantity(item.TonHienTai) }} {{ item.DonViTinh }}</option></select></label>
         <label>Số lượng xuất<input v-model.number="line.SoLuongXuat" type="number" min="0.001" step="0.001" required /></label>
         <button type="button" class="line-remove" @click="removeIssueLine(index)">×</button>
@@ -842,7 +849,7 @@ async function saveRecipe() {
       <div class="modal-heading"><div><p class="eyebrow">CÔNG THỨC MÓN</p><h2>Thiết lập định mức nguyên liệu</h2></div><button type="button" class="close-btn" @click="modal = ''">×</button></div>
       <label>Chọn món <select v-model="recipeForm.MaMon" @change="openRecipe(recipes.find(x => Number(x.MaMon) === Number(recipeForm.MaMon)))"><option v-for="item in recipes" :key="item.MaMon" :value="String(item.MaMon)">{{ item.TenMon }}</option></select></label>
       <div class="inventory-line-heading"><strong>Nguyên liệu cho một đơn vị món</strong><button type="button" class="text-btn" @click="addRecipeLine">＋ Thêm dòng</button></div>
-      <div v-for="(line, index) in recipeForm.items" :key="index" class="inventory-form-line recipe-line">
+      <div v-for="(line, index) in recipeForm.items" :key="lineKey(line)" class="inventory-form-line recipe-line">
         <label>Nguyên liệu<select v-model="line.MaNL" @change="onRecipeIngredientChange(line)" required><option value="">Chọn nguyên liệu</option><option v-for="item in ingredients.filter(x => x.TrangThai === 'Dang su dung')" :key="item.MaNL" :value="String(item.MaNL)">{{ item.TenNL }}</option></select></label>
         <label>Định lượng<input v-model.number="line.DinhLuong" type="number" min="0.001" step="0.001" required /></label>
         <label>Đơn vị<input v-model.trim="line.DonViTinh" maxlength="30" required /></label>

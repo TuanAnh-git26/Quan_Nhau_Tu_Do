@@ -19,6 +19,7 @@ const error = ref('')
 const success = ref('')
 const lastUpdated = ref(null)
 let refreshTimer = null
+let inFlight = false
 
 const filteredItems = computed(() => {
   const key = search.value.trim().toLocaleLowerCase('vi-VN')
@@ -71,6 +72,8 @@ async function loadItems(silent = false) {
     notifications.value = []
     return
   }
+  if (silent && inFlight) return
+  inFlight = true
   if (silent) refreshing.value = true
   else loading.value = true
   try {
@@ -84,8 +87,10 @@ async function loadItems(silent = false) {
     lastUpdated.value = new Date()
     if (error.value && silent) error.value = ''
   } catch (e) {
+    if ([401, 419].includes(e?.response?.status)) stopPolling()
     if (!silent || !items.value.length) error.value = readError(e, 'Không thể tải danh sách món của Bếp/Bar.')
   } finally {
+    inFlight = false
     loading.value = false
     refreshing.value = false
   }
@@ -157,12 +162,28 @@ async function updateItem(item) {
   }
 }
 
+function startPolling() {
+  stopPolling()
+  refreshTimer = window.setInterval(() => {
+    if (!document.hidden) void loadItems(true)
+  }, 5000)
+}
+function stopPolling() {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+  refreshTimer = null
+}
+function onVisibility() {
+  if (!document.hidden) void loadItems(true)
+}
+
 onMounted(async () => {
   await loadInitial()
-  refreshTimer = window.setInterval(() => loadItems(true), 5000)
+  startPolling()
+  document.addEventListener('visibilitychange', onVisibility)
 })
 onUnmounted(() => {
-  if (refreshTimer) window.clearInterval(refreshTimer)
+  stopPolling()
+  document.removeEventListener('visibilitychange', onVisibility)
 })
 </script>
 
