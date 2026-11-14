@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureBranchScope;
+use App\Http\Middleware\MeasureApiPerformance;
 use App\Http\Middleware\RequireUseCase;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -14,12 +15,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Sanctum SPA: sử dụng cookie session + chống CSRF, không phát token JS.
+        // Session + XSRF cookie, không dùng token trong localStorage.
         $middleware->statefulApi();
         $middleware->alias([
             'uc' => RequireUseCase::class,
             'branch.scope' => EnsureBranchScope::class,
         ]);
+        // Chỉ phát thống kê khi APP_ENV=local.
+        $middleware->append(MeasureApiPerformance::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
     })

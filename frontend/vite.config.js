@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
@@ -5,16 +6,29 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [
     vue(),
-    tailwindcss()
+    tailwindcss(),
   ],
 
   server: {
-    host: '0.0.0.0',
+    host: '127.0.0.1',
     port: 5173,
-    strictPort: true
-  },
+    strictPort: true,
 
-  build: {
-    sourcemap: false
-  }
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+
+      '/login': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+
+      '/sanctum': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
