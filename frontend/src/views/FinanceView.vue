@@ -162,6 +162,7 @@ onMounted(init)
 </script>
 
 <template>
+  <div class="ui-view ui-view--finance">
   <div class="qntd-module space-y-5 text-slate-800">
     <header class="flex flex-wrap items-start justify-between gap-3"><div>
       <p class="text-xs font-bold tracking-wider text-amber-600">PHÂN HỆ KẾ TOÁN VÀ MARKETING</p>
@@ -206,5 +207,7 @@ onMounted(init)
         <div class="flex justify-end gap-2"><button type="button" class="rounded border px-4 py-2" @click="modal = false">Hủy</button><button :disabled="busy" type="submit" class="rounded bg-slate-800 px-4 py-2 text-white">Lưu</button></div>
       </form>
     </div>
+  </div>
+
   </div>
 </template>

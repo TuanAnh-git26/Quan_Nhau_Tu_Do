@@ -230,6 +230,7 @@ onMounted(async () => { await base(); await load() })
 </script>
 
 <template>
+  <div class="ui-view ui-view--human-resources">
   <div class="qntd-module space-y-5 text-slate-800">
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div><p class="text-xs font-bold tracking-widest text-amber-600">PHÂN HỆ NHÂN SỰ </p><h1 class="mt-1 text-2xl font-bold">Nhân sự, chấm công và lương</h1></div>
@@ -321,5 +322,7 @@ onMounted(async () => { await base(); await load() })
         </div>
       </form>
     </div>
+  </div>
+
   </div>
 </template>

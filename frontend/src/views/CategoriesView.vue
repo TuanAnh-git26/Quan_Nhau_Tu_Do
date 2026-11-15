@@ -284,6 +284,7 @@ onMounted(load)
 </script>
 
 <template>
+  <div class="ui-view ui-view--categories">
   <div class="page-heading">
     <div>
       <p class="eyebrow">CẤU HÌNH THỰC ĐƠN</p>
@@ -561,5 +562,7 @@ onMounted(load)
         </button>
       </div>
     </form>
+  </div>
+
   </div>
 </template>

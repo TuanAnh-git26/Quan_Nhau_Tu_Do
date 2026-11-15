@@ -190,6 +190,7 @@ onMounted(loadAll)
 </script>
 
 <template>
+  <div class="ui-view ui-view--areas-tables">
   <div class="page-heading">
     <div>
       <p class="eyebrow">SƠ ĐỒ PHỤC VỤ</p>
@@ -301,6 +302,8 @@ onMounted(loadAll)
       <label>Trạng thái <select v-model="tableForm.TrangThai"><option value="Trong">Trống</option><option value="Dang giu cho">Đang giữ chỗ</option><option value="Dang phuc vu">Đang phục vụ</option><option value="Ngung su dung">Ngừng sử dụng</option></select></label>
       <div class="modal-actions"><button type="button" class="secondary-btn" @click="tableModal = false">Đóng</button><button class="primary-btn" type="submit" :disabled="saving">{{ saving ? 'Đang lưu...' : 'Lưu bàn' }}</button></div>
     </form>
+  </div>
+
   </div>
 </template>
 

@@ -536,6 +536,7 @@ async function saveRecipe() {
 </script>
 
 <template>
+  <div class="ui-view ui-view--inventory">
   <div class="page-heading inventory-heading">
     <div>
       <p class="eyebrow">QUẢN LÝ KHO & MUA HÀNG</p>
@@ -857,6 +858,8 @@ async function saveRecipe() {
       </div>
       <div class="modal-actions"><button type="button" class="secondary-btn" @click="modal = ''">Hủy</button><button class="primary-btn" type="submit" :disabled="saving">{{ saving ? 'Đang lưu…' : 'Lưu định mức' }}</button></div>
     </form>
+  </div>
+
   </div>
 </template>
 

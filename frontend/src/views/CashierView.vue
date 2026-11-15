@@ -1,4 +1,5 @@
 <template>
+  <div class="ui-view ui-view--cashier">
   <div class="qntd-module min-h-screen bg-slate-50 p-4 text-slate-800 md:p-6">
     <div class="mx-auto max-w-7xl space-y-5">
       <header class="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
@@ -223,6 +224,8 @@
         </div>
       </section>
     </div>
+  </div>
+
   </div>
 </template>
 

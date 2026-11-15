@@ -1,6 +1,12 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import {
+  LayoutDashboard, Utensils, ListTree, Grid2X2, CalendarDays,
+  ClipboardList, ChefHat, MessageSquareWarning, Boxes, Receipt,
+  Users, BarChart3, Settings, Menu as MenuIcon, ChevronDown,
+  LogOut, X,
+} from 'lucide-vue-next'
 import api, { loginSession } from './services/api'
 import DashboardView from './views/DashboardView.vue'
 import MenuItemsView from './views/MenuItemsView.vue'
@@ -39,6 +45,7 @@ function storeProfile(data) {
 // Có hồ sơ đã lưu thì vào thẳng giao diện, phiên được xác thực ngầm sau đó.
 const user = ref(readStoredProfile())
 const loginBusy = ref(false)
+const logoutBusy = ref(false)
 const loginError = ref('')
 const logoutError = ref('')
 const loginBranches = ref([])
@@ -50,19 +57,19 @@ const loginForm = ref({
 })
 
 const allNavigation = [
-  { id: 'dashboard', label: 'Tổng quan', icon: '▦', uc: null },
-  { id: 'menu', label: 'Quản lý thực đơn', icon: '▤', uc: 'UC2.1' },
-  { id: 'categories', label: 'Danh mục món', icon: '▥', uc: 'UC2.1' },
-  { id: 'areas-tables', label: 'Khu vực và bàn', icon: '▦', uc: 'UC1.2' },
-  { id: 'reservations', label: 'Đặt bàn', icon: '▣', uc: 'UC1.1' },
-  { id: 'orders', label: 'Order / POS', icon: '▤', uc: 'UC2.2' },
-  { id: 'bep-bar', label: 'Bếp / Bar', icon: '♨', uc: 'UC3.1' },
-  { id: 'complaints', label: 'Khiếu nại / sự cố', icon: '⚑', uc: 'UC2.5' },
-  { id: 'inventory', label: 'Kho & mua hàng', icon: '▣', uc: 'UC4.1' },
-  { id: 'cashier', label: 'Thu ngân và hóa đơn', icon: '▣', uc: 'UC5.4' },
-  { id: 'hr', label: 'Nhân sự và tiền lương', icon: '♙', uc: 'UC6.1' },
-  { id: 'finance', label: 'Kế toán và báo cáo', icon: '▥', uc: 'UC7.5' },
-  { id: 'system', label: 'Quản trị và hỗ trợ', icon: '⚙', uc: null },
+  { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard, uc: null },
+  { id: 'menu', label: 'Quản lý thực đơn', icon: Utensils, uc: 'UC2.1' },
+  { id: 'categories', label: 'Danh mục món', icon: ListTree, uc: 'UC2.1' },
+  { id: 'areas-tables', label: 'Khu vực và bàn', icon: Grid2X2, uc: 'UC1.2' },
+  { id: 'reservations', label: 'Đặt bàn', icon: CalendarDays, uc: 'UC1.1' },
+  { id: 'orders', label: 'Order / POS', icon: ClipboardList, uc: 'UC2.2' },
+  { id: 'bep-bar', label: 'Bếp / Bar', icon: ChefHat, uc: 'UC3.1' },
+  { id: 'complaints', label: 'Khiếu nại / sự cố', icon: MessageSquareWarning, uc: 'UC2.5' },
+  { id: 'inventory', label: 'Kho & mua hàng', icon: Boxes, uc: 'UC4.1' },
+  { id: 'cashier', label: 'Thu ngân và hóa đơn', icon: Receipt, uc: 'UC5.4' },
+  { id: 'hr', label: 'Nhân sự và tiền lương', icon: Users, uc: 'UC6.1' },
+  { id: 'finance', label: 'Kế toán và báo cáo', icon: BarChart3, uc: 'UC7.5' },
+  { id: 'system', label: 'Quản trị và hỗ trợ', icon: Settings, uc: null },
 ]
 
 const has = uc =>
@@ -303,6 +310,8 @@ async function login() {
 
 // ĐĂNG XUẤT
 async function logout() {
+  if (logoutBusy.value) return
+  logoutBusy.value = true
   logoutError.value = ''
   try {
     await api.post('/auth/logout')
@@ -318,6 +327,8 @@ async function logout() {
     } else {
       logoutError.value = messageFrom(e, 'Không thể đăng xuất. Vui lòng thử lại.')
     }
+  } finally {
+    logoutBusy.value = false
   }
 }
 
@@ -348,6 +359,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <a v-if="user" class="skip-link" href="#main-content">Bỏ qua điều hướng</a>
   <!-- GIAO DIỆN ĐĂNG NHẬP -->
   <div
     v-if="!user"
@@ -474,7 +486,8 @@ onUnmounted(() => {
           class="mobile-close"
           @click="mobileMenuOpen = false"
         >
-          ×
+          <X :size="22" aria-hidden="true" />
+          <span class="sr-only">Đóng menu</span>
         </button>
       </div>
 
@@ -490,7 +503,7 @@ onUnmounted(() => {
           :class="{ active: currentPage === item.id }"
           @click="navigate(item.id)"
         >
-          <span class="nav-symbol">{{ item.icon }}</span>
+          <span class="nav-symbol"><component :is="item.icon" :size="19" :stroke-width="1.8" aria-hidden="true" /></span>
           <span>{{ item.label }}</span>
 
           <span
@@ -520,7 +533,8 @@ onUnmounted(() => {
             class="mobile-menu-button"
             @click="mobileMenuOpen = true"
           >
-            ☰
+            <MenuIcon :size="22" aria-hidden="true" />
+            <span class="sr-only">Mở menu</span>
           </button>
 
           <div class="breadcrumb">
@@ -535,34 +549,31 @@ onUnmounted(() => {
           <div class="topbar-divider"></div>
 
           <div class="user-profile">
-            <div class="user-avatar">
-              {{
-                (user.HoTen || user.TenDangNhap || 'Q8')
-                  .slice(0, 2)
-                  .toUpperCase()
-              }}
-            </div>
-
-            <div class="user-meta">
-              <strong>
-                {{ user.HoTen || user.TenDangNhap }}
-              </strong>
-              <small>{{ user.TenVaiTro }}</small>
-            </div>
-
-            <button
-              title="Đăng xuất"
-              class="rounded-lg border px-3 py-2 text-xs"
-              @click="logout"
-            >
-              Đăng xuất
-            </button>
-            <p v-if="logoutError" class="mt-1 text-xs text-red-600">{{ logoutError }}</p>
+            <details class="account-dropdown">
+              <summary class="profile-trigger" aria-label="Mở menu hồ sơ tài khoản">
+                <div class="user-avatar">
+                  {{ (user.HoTen || user.TenDangNhap || 'Q8').slice(0, 2).toUpperCase() }}
+                </div>
+                <div class="user-meta">
+                  <strong>{{ user.HoTen || user.TenDangNhap }}</strong>
+                  <small>{{ user.TenVaiTro }}</small>
+                </div>
+                <ChevronDown class="profile-chevron" :size="16" aria-hidden="true" />
+              </summary>
+              <div class="profile-dropdown">
+                <div class="profile-dropdown-caption">Tài khoản đang đăng nhập</div>
+                <button class="profile-logout-button" type="button" :disabled="logoutBusy" @click="logout">
+                  <LogOut :size="17" aria-hidden="true" />
+                  {{ logoutBusy ? 'Đang đăng xuất...' : 'Đăng xuất' }}
+                </button>
+                <p v-if="logoutError" class="profile-logout-error" role="alert">{{ logoutError }}</p>
+              </div>
+            </details>
           </div>
         </div>
       </header>
 
-      <main class="main-content">
+      <main id="main-content" class="main-content" tabindex="-1">
         <DashboardView
           v-if="currentPage === 'dashboard'"
           :user="user"

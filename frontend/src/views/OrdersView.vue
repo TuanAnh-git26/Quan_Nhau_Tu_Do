@@ -292,6 +292,7 @@ onMounted(loadInitial)
 </script>
 
 <template>
+  <div class="ui-view ui-view--orders">
   <div class="page-heading">
     <div><p class="eyebrow">ĐIỀU HÀNH PHỤC VỤ</p><h1>Order / POS</h1><p class="muted">Lập order theo bàn, ghi nhận món gọi và chuyển yêu cầu đến Bếp hoặc quầy pha chế.</p></div>
     <div class="page-heading-actions"><button class="secondary-btn" :disabled="loading" @click="refreshAll">↻ Làm mới dữ liệu</button></div>
@@ -386,6 +387,8 @@ onMounted(loadInitial)
   </div>
 
   <div v-if="employeeModal" class="modal-backdrop" @click.self="employeeModal = false"><form class="modal-card" @submit.prevent="createQuickEmployee"><div class="modal-heading"><div><p class="eyebrow">NHÂN SỰ PHỤ TRÁCH ORDER</p><h2>Tạo nhân viên dùng cho demo</h2></div><button type="button" class="close-btn" @click="employeeModal = false">×</button></div><p class="form-hint">Tạo hồ sơ tối thiểu để ghi nhận nhân viên lập order. Hồ sơ nhân sự đầy đủ thuộc phân hệ Nhân sự ở đợt sau.</p><label>Họ tên nhân viên <span>*</span><input v-model.trim="employeeName" required maxlength="150" placeholder="Nhập họ tên" /></label><label>Số điện thoại<input v-model.trim="employeePhone" maxlength="20" placeholder="Không bắt buộc" /></label><div class="modal-actions"><button type="button" class="secondary-btn" @click="employeeModal = false">Hủy</button><button type="submit" class="primary-btn" :disabled="saving">{{ saving ? 'Đang lưu...' : 'Tạo nhân viên' }}</button></div></form></div>
+
+  </div>
 </template>
 
 <style scoped>

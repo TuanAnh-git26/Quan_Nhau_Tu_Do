@@ -105,6 +105,7 @@ onUnmounted(() => { sequence++ })
 </script>
 
 <template>
+  <div class="ui-view ui-view--dashboard">
   <div class="qntd-module space-y-5 text-slate-800">
     <header class="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -183,10 +184,12 @@ onUnmounted(() => { sequence++ })
     <section class="dash-card rounded-xl border bg-white p-5">
       <h2 class="mb-3 text-lg font-bold">Truy cập nhanh</h2>
       <div class="dash-grid">
-        <button v-for="item in quickLinks" :key="item.id" class="rounded-lg border p-4 text-left hover:bg-slate-50" @click="emit('navigate', item.id)"><span class="mr-2">{{ item.icon }}</span><span class="font-semibold">{{ item.label }}</span></button>
+        <button v-for="item in quickLinks" :key="item.id" class="rounded-lg border p-4 text-left hover:bg-slate-50" @click="emit('navigate', item.id)"><component :is="item.icon" :size="18" :stroke-width="1.9" aria-hidden="true" class="quicklink-icon" /><span class="font-semibold">{{ item.label }}</span></button>
       </div>
       <p v-if="!quickLinks.length" class="text-sm text-slate-500">Tài khoản chưa được cấp thêm chức năng. Liên hệ quản trị viên để phân quyền.</p>
     </section>
+  </div>
+
   </div>
 </template>
 

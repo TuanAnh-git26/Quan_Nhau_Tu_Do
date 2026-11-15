@@ -188,6 +188,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <div class="ui-view ui-view--bep-bar">
   <section class="kitchen-page">
     <div class="kitchen-heading">
       <div>
@@ -403,6 +404,8 @@ onUnmounted(() => {
       <span>Chỉ bộ phận phụ trách mới được cập nhật trạng thái món.</span>
     </div>
   </section>
+
+  </div>
 </template>
 
 <style scoped>

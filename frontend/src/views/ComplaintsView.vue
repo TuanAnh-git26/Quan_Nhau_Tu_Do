@@ -95,6 +95,7 @@ onMounted(initialize)
 </script>
 
 <template>
+  <div class="ui-view ui-view--complaints">
   <div class="complaints-page">
     <header class="heading">
       <div><p class="eyebrow">UC2.5 · PHÂN HỆ ORDER / PHỤC VỤ</p><h1>Phiếu khiếu nại & sự cố</h1><p>Tiếp nhận theo bàn, theo dõi xử lý và nhật ký tại từng cơ sở.</p></div>
@@ -145,6 +146,8 @@ onMounted(initialize)
         <div class="actions"><button type="button" class="btn" @click="editOpen=false">Hủy</button><button class="btn primary" :disabled="saving">{{ saving ? 'Đang lưu...' : 'Xác nhận' }}</button></div>
       </form>
     </div>
+  </div>
+
   </div>
 </template>
 

@@ -148,6 +148,7 @@ onMounted(init)
 </script>
 
 <template>
+  <div class="ui-view ui-view--system">
   <div class="qntd-module space-y-5 text-slate-800">
     <header class="flex flex-wrap items-center justify-between"><div><p class="text-xs font-bold tracking-wider text-amber-600">PHÂN HỆ QUẢN TRỊ </p><h1 class="mt-1 text-2xl font-bold">Tài khoản, phân quyền và hỗ trợ</h1></div><p class="text-sm text-slate-500">Đăng nhập: {{ user.TenDangNhap }}</p></header>
     <div v-if="error" class="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{{ error }}</div><div v-if="notice" class="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{{ notice }}</div>
@@ -198,5 +199,7 @@ onMounted(init)
         </div>
       </form>
     </div>
+  </div>
+
   </div>
 </template>

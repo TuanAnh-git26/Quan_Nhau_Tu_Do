@@ -384,6 +384,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div class="ui-view ui-view--menu-items">
   <div class="page-heading">
     <div>
       <p class="eyebrow">THỰC ĐƠN NHÀ HÀNG</p>
@@ -771,5 +772,7 @@ onMounted(async () => {
         </button>
       </div>
     </form>
+  </div>
+
   </div>
 </template>

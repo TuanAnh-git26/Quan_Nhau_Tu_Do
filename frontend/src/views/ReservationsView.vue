@@ -202,6 +202,7 @@ onMounted(loadInitial)
 </script>
 
 <template>
+  <div class="ui-view ui-view--reservations">
   <div class="page-heading">
     <div><p class="eyebrow">TIẾP ĐÓN KHÁCH HÀNG</p><h1>Quản lý đặt bàn</h1><p class="muted">Tiếp nhận yêu cầu, kiểm tra bàn trống và theo dõi tình trạng đặt chỗ.</p></div>
     <div class="page-heading-actions"><button class="primary-btn" @click="openCreate">＋ Tạo phiếu đặt bàn</button></div>
@@ -273,6 +274,8 @@ onMounted(loadInitial)
       <label>Ghi chú nội bộ<textarea v-model.trim="form.GhiChu" rows="2" maxlength="2000" placeholder="Ghi chú cho nhân viên tiếp nhận..."></textarea></label>
       <div class="modal-actions"><button type="button" class="secondary-btn" @click="modalOpen = false">Đóng</button><button type="submit" class="primary-btn" :disabled="saving || !form.MaBan.length">{{ saving ? 'Đang lưu...' : 'Lưu phiếu đặt bàn' }}</button></div>
     </form>
+  </div>
+
   </div>
 </template>
 
