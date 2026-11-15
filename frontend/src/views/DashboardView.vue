@@ -131,61 +131,77 @@ onUnmounted(() => { sequence++ })
 
     <div v-if="loadingBranches || loadingMetrics" class="text-sm text-slate-500">Đang tải dữ liệu được phép truy cập...</div>
 
-    <section v-if="maySeeFinance" class="space-y-3">
+    <div v-if="maySeeFinance" class="dash-block">
       <h2 class="text-lg font-bold">Doanh thu – thu chi theo kỳ</h2>
-      <div v-if="finance" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div v-if="finance" class="dash-grid">
         <article v-for="[key, label] in [
           ['DoanhThuThanhToan', 'Doanh thu đã thanh toán'],
           ['ThuKhac', 'Thu khác đã duyệt'],
           ['ChiKhac', 'Chi khác đã duyệt'],
           ['TongThu', 'Tổng thu'],
           ['ChenhLechThuChi', 'Chênh lệch thu – chi (chưa phải lợi nhuận)'],
-        ]" :key="key" class="rounded-xl border bg-white p-5">
+        ]" :key="key" class="dash-card rounded-xl border bg-white p-5">
           <p class="text-sm text-slate-500">{{ label }}</p>
           <strong class="mt-2 block text-xl">{{ money(finance[key]) }}</strong>
         </article>
-        <article class="rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Giao dịch thành công</p><strong class="mt-2 block text-xl">{{ finance.GiaoDichThanhCong || 0 }}</strong></article>
+        <article class="dash-card rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Giao dịch thành công</p><strong class="mt-2 block text-xl">{{ finance.GiaoDichThanhCong || 0 }}</strong></article>
       </div>
       <p v-else-if="!loadingMetrics" class="text-sm text-slate-500">Chưa có số liệu tài chính cho bộ lọc đã chọn.</p>
       <p class="text-xs text-slate-500">Số liệu theo API báo cáo tài chính; chưa bao gồm đầy đủ giá vốn, chi phí lương và tất cả chi phí vận hành.</p>
-    </section>
+    </div>
 
-    <section v-if="(maySeeInventory && inventory) || (maySeeFinance && finance)" class="space-y-3">
+    <div v-if="(maySeeInventory && inventory) || (maySeeFinance && finance)" class="dash-block">
       <h2 class="text-lg font-bold">Cần xử lý</h2>
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <article v-if="maySeeInventory && inventory" class="rounded-xl border bg-white p-5">
+      <div class="dash-grid">
+        <article v-if="maySeeInventory && inventory" class="dash-card rounded-xl border bg-white p-5">
           <p class="text-sm text-slate-500">Đơn đặt hàng (PO) chờ duyệt</p>
           <strong class="mt-2 block text-2xl" :class="inventory.POChoDuyet ? 'text-amber-600' : ''">{{ inventory.POChoDuyet || 0 }}</strong>
           <button v-if="canOpen('inventory')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'inventory')">Mở Kho &amp; mua hàng →</button>
         </article>
-        <article v-if="maySeeInventory && inventory" class="rounded-xl border bg-white p-5">
+        <article v-if="maySeeInventory && inventory" class="dash-card rounded-xl border bg-white p-5">
           <p class="text-sm text-slate-500">Nguyên liệu dưới mức tồn tối thiểu</p>
           <strong class="mt-2 block text-2xl" :class="inventory.SoNguyenLieuCanNhap ? 'text-rose-600' : ''">{{ inventory.SoNguyenLieuCanNhap || 0 }}</strong>
           <button v-if="canOpen('inventory')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'inventory')">Xem tồn kho →</button>
         </article>
-        <article v-if="maySeeFinance && finance" class="rounded-xl border bg-white p-5">
+        <article v-if="maySeeFinance && finance" class="dash-card rounded-xl border bg-white p-5">
           <p class="text-sm text-slate-500">Phiếu thu/chi chờ duyệt</p>
           <strong class="mt-2 block text-2xl" :class="finance.PhieuChoDuyet ? 'text-amber-600' : ''">{{ finance.PhieuChoDuyet || 0 }}</strong>
           <button v-if="canOpen('finance')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'finance')">Mở Tài chính →</button>
         </article>
       </div>
-    </section>
+    </div>
 
-    <section v-if="maySeeMenu || maySeeCategories" class="space-y-3">
+    <div v-if="maySeeMenu || maySeeCategories" class="dash-block">
       <h2 class="text-lg font-bold">Thông tin thực đơn</h2>
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <article v-if="maySeeCategories" class="rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Danh mục đang hoạt động</p><strong class="mt-2 block text-2xl">{{ activeCategories }}</strong></article>
-        <article v-if="maySeeMenu" class="rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Món đang có thể bán</p><strong class="mt-2 block text-2xl">{{ availableItems }}</strong></article>
-        <article v-if="maySeeMenu" class="rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Món chưa có giá tại cơ sở</p><strong class="mt-2 block text-2xl">{{ missingPrices }}</strong></article>
+      <div class="dash-grid">
+        <article v-if="maySeeCategories" class="dash-card rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Danh mục đang hoạt động</p><strong class="mt-2 block text-2xl">{{ activeCategories }}</strong></article>
+        <article v-if="maySeeMenu" class="dash-card rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Món đang có thể bán</p><strong class="mt-2 block text-2xl">{{ availableItems }}</strong></article>
+        <article v-if="maySeeMenu" class="dash-card rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Món chưa có giá tại cơ sở</p><strong class="mt-2 block text-2xl">{{ missingPrices }}</strong></article>
       </div>
-    </section>
+    </div>
 
-    <section class="rounded-xl border bg-white p-5">
+    <section class="dash-card rounded-xl border bg-white p-5">
       <h2 class="mb-3 text-lg font-bold">Truy cập nhanh</h2>
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div class="dash-grid">
         <button v-for="item in quickLinks" :key="item.id" class="rounded-lg border p-4 text-left hover:bg-slate-50" @click="emit('navigate', item.id)"><span class="mr-2">{{ item.icon }}</span><span class="font-semibold">{{ item.label }}</span></button>
       </div>
       <p v-if="!quickLinks.length" class="text-sm text-slate-500">Tài khoản chưa được cấp thêm chức năng. Liên hệ quản trị viên để phân quyền.</p>
     </section>
   </div>
 </template>
+
+<style scoped>
+.dash-block { display: flex; flex-direction: column; gap: 12px; }
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.dash-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 112px;
+  padding: 18px 20px;
+}
+</style>

@@ -18,11 +18,29 @@ import SystemView from './views/SystemView.vue'
 
 const currentPage = ref('dashboard')
 const mobileMenuOpen = ref(false)
-const user = ref(null)
+const PROFILE_KEY = 'qntd:profile:v1'
+function readStoredProfile() {
+  try {
+    const data = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')
+    return data?.MaTK && Array.isArray(data.Quyen) ? data : null
+  } catch {
+    return null
+  }
+}
+function storeProfile(data) {
+  try {
+    if (data) localStorage.setItem(PROFILE_KEY, JSON.stringify(data))
+    else localStorage.removeItem(PROFILE_KEY)
+  } catch {
+    // trình duyệt chặn localStorage: bỏ qua
+  }
+}
+
+// Có hồ sơ đã lưu thì vào thẳng giao diện, phiên được xác thực ngầm sau đó.
+const user = ref(readStoredProfile())
 const loginBusy = ref(false)
 const loginError = ref('')
 const logoutError = ref('')
-const sessionChecking = ref(true)
 const loginBranches = ref([])
 const branchesBusy = ref(false)
 const loginForm = ref({
@@ -220,6 +238,7 @@ function acceptProfile(data) {
   }
 
   user.value = data
+  storeProfile(data)
 
   if (!navigation.value.some(x => x.id === currentPage.value)) {
     currentPage.value = 'dashboard'
@@ -243,21 +262,12 @@ async function loadMe() {
 
 // KHÔI PHỤC PHIÊN SAU KHI F5 (chạy nền, không chặn form đăng nhập)
 async function restoreSession() {
-  const timer = window.setTimeout(() => {
-    sessionChecking.value = false
-  }, 1500)
-
   try {
-    const { data } = await api.get('/auth/me', { timeout: 6000 })
-    if (!user.value) {
-      acceptProfile(data)
-      currentPage.value = 'dashboard'
-    }
-  } catch {
-    // 401/419 hoặc lỗi mạng: giữ form đăng nhập
-  } finally {
-    window.clearTimeout(timer)
-    sessionChecking.value = false
+    const { data } = await api.get('/auth/me', { timeout: 8000 })
+    acceptProfile(data)
+  } catch (e) {
+    // Chỉ khi máy chủ xác nhận hết phiên mới quay về form đăng nhập.
+    if ([401, 419].includes(e?.response?.status)) expired()
   }
 }
 
@@ -298,10 +308,12 @@ async function logout() {
     await api.post('/auth/logout')
 
     user.value = null
+    storeProfile(null)
     currentPage.value = 'dashboard'
   } catch (e) {
     if ([401, 419].includes(e?.response?.status)) {
       user.value = null
+      storeProfile(null)
       currentPage.value = 'dashboard'
     } else {
       logoutError.value = messageFrom(e, 'Không thể đăng xuất. Vui lòng thử lại.')
@@ -312,6 +324,7 @@ async function logout() {
 // PHIÊN ĐĂNG NHẬP HẾT HẠN
 function expired() {
   user.value = null
+  storeProfile(null)
   currentPage.value = 'dashboard'
 
   loadLoginBranches()
@@ -335,17 +348,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- ĐANG KIỂM TRA PHIÊN -->
-  <div
-    v-if="!user && sessionChecking"
-    class="grid min-h-screen place-items-center bg-slate-100 text-sm text-slate-500"
-  >
-    Đang kiểm tra phiên…
-  </div>
-
   <!-- GIAO DIỆN ĐĂNG NHẬP -->
   <div
-    v-else-if="!user"
+    v-if="!user"
     class="grid min-h-screen place-items-center bg-slate-100 p-4"
   >
     <form
