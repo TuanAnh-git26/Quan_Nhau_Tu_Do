@@ -87,7 +87,7 @@ class InventoryController extends Controller
             'HanhDong' => $action,
             'DoiTuong' => $object,
             'NoiDungThayDoi' => $description,
-            'MaTK' => null,
+            'MaTK' => request()->user()?->getAuthIdentifier(),
         ]);
     }
 
