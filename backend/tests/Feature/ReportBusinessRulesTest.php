@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Auth\TaiKhoanUser;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -98,9 +97,6 @@ class ReportBusinessRulesTest extends TestCase
 
     private function signIn(array $identity, int $branch): void
     {
-        // Mỗi lần đăng nhập giả lập là một tài khoản khác; xóa guard đã cache
-        // từ request trước để Sanctum không giữ user cũ trong cùng một test case.
-        Auth::forgetGuards();
         $this->actingAs($identity['user'], 'web');
         $this->withSession([
             'qntd_branch_id' => $branch,
