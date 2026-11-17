@@ -221,14 +221,41 @@ class FinanceController extends Controller
 
     public function promotionPerformance(Request $request)
     {
+        $d = $request->validate([
+            'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
+
+        $invoiceIds = DB::table('CT_HOA_DON as cthd')
+            ->join('CHI_TIET_ORDER as od', 'od.MaCTOrder', '=', 'cthd.MaCTOrder')
+            ->join('PHIEU_ORDER as po', 'po.MaOrder', '=', 'od.MaOrder')
+            ->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')
+            ->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')
+            ->where('kv.MaCS', $d['MaCS'])
+            ->distinct()->pluck('cthd.MaHD');
+
+        $applied = DB::table('AP_DUNG_KM as ap')
+            ->join('HOA_DON as hd', 'hd.MaHD', '=', 'ap.MaHD')
+            ->whereIn('ap.MaHD', $invoiceIds)
+            ->when($d['from'] ?? null, fn ($q, $from) => $q->whereDate('hd.NgayLap', '>=', $from))
+            ->when($d['to'] ?? null, fn ($q, $to) => $q->whereDate('hd.NgayLap', '<=', $to))
+            ->where('hd.TrangThai', '<>', 'Da huy')
+            ->groupBy('ap.MaKM')
+            ->select('ap.MaKM')
+            ->selectRaw('COUNT(DISTINCT ap.MaHD) as SoHoaDon')
+            ->selectRaw('SUM(ap.SoTienGiam) as TongDaGiam')
+            ->selectRaw('SUM(hd.TongTien - hd.GiamGia) as DoanhThuHoaDonApDung');
+
         return response()->json(DB::table('KHUYEN_MAI as km')
-            ->leftJoin('AP_DUNG_KM as ap', 'ap.MaKM', '=', 'km.MaKM')
-            ->leftJoin('HOA_DON as hd', 'hd.MaHD', '=', 'ap.MaHD')
-            ->select('km.MaKM', 'km.TenKM', 'km.NganSach', 'km.TrangThai',
-                DB::raw('COUNT(DISTINCT ap.MaHD) as SoHoaDon'),
-                DB::raw('COALESCE(SUM(ap.SoTienGiam), 0) as TongDaGiam'),
-                DB::raw('COALESCE(SUM(CASE WHEN hd.TrangThai <> \'Da huy\' THEN hd.TongTien - hd.GiamGia ELSE 0 END), 0) as DoanhThuHoaDonApDung'))
-            ->groupBy('km.MaKM', 'km.TenKM', 'km.NganSach', 'km.TrangThai')
+            ->leftJoinSub($applied, 'performance', fn ($join) => $join->on('performance.MaKM', '=', 'km.MaKM'))
+            ->select(
+                'km.MaKM', 'km.TenKM', 'km.NganSach', 'km.TrangThai',
+                DB::raw('COALESCE(performance.SoHoaDon, 0) as SoHoaDon'),
+                DB::raw('COALESCE(performance.TongDaGiam, 0) as TongDaGiam'),
+                DB::raw('COALESCE(performance.DoanhThuHoaDonApDung, 0) as DoanhThuHoaDonApDung'),
+                DB::raw('CASE WHEN km.NganSach > 0 THEN COALESCE(performance.TongDaGiam, 0) / km.NganSach * 100 ELSE 0 END as TyLeSuDungNganSach')
+            )
             ->orderByDesc('TongDaGiam')->get());
     }
 
