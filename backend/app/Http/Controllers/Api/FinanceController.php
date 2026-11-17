@@ -11,6 +11,13 @@ use Illuminate\Validation\ValidationException;
 
 class FinanceController extends Controller
 {
+    private function assertActorRole(array $roles): void
+    {
+        $actor = request()->user();
+        if (!$actor || $actor->TenVaiTro === 'Quan tri he thong') return;
+        abort_unless(in_array((string) $actor->TenVaiTro, $roles, true), 403, 'Vai trò hiện tại không được thực hiện thao tác này.');
+    }
+
     private function page(Request $request, $query)
     {
         return response()->json($query->paginate(min(100, max(5, (int) $request->input('per_page', 10)))));
@@ -167,6 +174,7 @@ class FinanceController extends Controller
 
     public function storeBudget(Request $request)
     {
+        $this->assertActorRole(['Ban giam doc']);
         $d = $request->validate([
             'MaCS' => 'required|integer|exists:CO_SO,MaCS',
             'MaNVLap' => 'required|integer|exists:NHAN_VIEN,MaNV',
@@ -185,6 +193,7 @@ class FinanceController extends Controller
 
     public function budgetStatus(Request $request, int $id)
     {
+        $this->assertActorRole(['Ban giam doc']);
         $d = $request->validate([
             'TrangThai' => ['required', Rule::in(['Cho duyet', 'Da duyet', 'Tu choi'])],
             'MaNVDuyet' => 'nullable|integer|exists:NHAN_VIEN,MaNV',
@@ -214,41 +223,93 @@ class FinanceController extends Controller
     {
         return response()->json(DB::table('KHUYEN_MAI as km')
             ->leftJoin('AP_DUNG_KM as ap', 'ap.MaKM', '=', 'km.MaKM')
+            ->leftJoin('HOA_DON as hd', 'hd.MaHD', '=', 'ap.MaHD')
             ->select('km.MaKM', 'km.TenKM', 'km.NganSach', 'km.TrangThai',
-                DB::raw('COUNT(ap.MaHD) as SoHoaDon'),
-                DB::raw('COALESCE(SUM(ap.SoTienGiam), 0) as TongDaGiam'))
+                DB::raw('COUNT(DISTINCT ap.MaHD) as SoHoaDon'),
+                DB::raw('COALESCE(SUM(ap.SoTienGiam), 0) as TongDaGiam'),
+                DB::raw('COALESCE(SUM(CASE WHEN hd.TrangThai <> \'Da huy\' THEN hd.TongTien - hd.GiamGia ELSE 0 END), 0) as DoanhThuHoaDonApDung'))
             ->groupBy('km.MaKM', 'km.TenKM', 'km.NganSach', 'km.TrangThai')
             ->orderByDesc('TongDaGiam')->get());
     }
 
     public function dashboard(Request $request)
     {
-        $d = $request->validate(['MaCS' => 'required|integer|exists:CO_SO,MaCS', 'from' => 'required|date', 'to' => 'required|date|after_or_equal:from']);
-        $branch = (int)$d['MaCS'];
-        $payments = DB::table('THANH_TOAN as tt')
-            ->join('HOA_DON as hd', 'hd.MaHD', '=', 'tt.MaHD')
-            ->join('CT_HOA_DON as ct', 'ct.MaHD', '=', 'hd.MaHD')
-            ->join('CHI_TIET_ORDER as od', 'od.MaCTOrder', '=', 'ct.MaCTOrder')
+        $d = $request->validate([
+            'MaCS' => 'required|integer|exists:CO_SO,MaCS',
+            'from' => 'required|date',
+            'to' => 'required|date|after_or_equal:from',
+        ]);
+        $branch = (int) $d['MaCS'];
+
+        // Lấy danh sách hóa đơn theo cơ sở trước, tránh nhân đôi giao dịch khi hóa đơn có nhiều dòng món.
+        $invoiceIds = DB::table('CT_HOA_DON as cthd')
+            ->join('CHI_TIET_ORDER as od', 'od.MaCTOrder', '=', 'cthd.MaCTOrder')
             ->join('PHIEU_ORDER as po', 'po.MaOrder', '=', 'od.MaOrder')
             ->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')
             ->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')
             ->where('kv.MaCS', $branch)
-            ->where('tt.TrangThaiGD', 'Thanh cong')
-            ->whereDate('tt.ThoiGian', '>=', $d['from'])->whereDate('tt.ThoiGian', '<=', $d['to'])
-            ->distinct()->pluck('tt.MaTT');
-        $totalCollected = $payments->isEmpty() ? 0 : (float)DB::table('THANH_TOAN')->whereIn('MaTT', $payments)->sum('SoTien');
-        $vouchers = DB::table('PHIEU_THU_CHI')->where('MaCS', $branch)->where('TrangThai', 'Da duyet')
-            ->whereDate('NgayLap', '>=', $d['from'])->whereDate('NgayLap', '<=', $d['to']);
-        $otherIncome = (float)(clone $vouchers)->where('Loai', 'Thu')->sum('SoTien');
-        $otherExpense = (float)(clone $vouchers)->where('Loai', 'Chi')->sum('SoTien');
+            ->distinct()->pluck('cthd.MaHD');
+
+        $successfulPayments = DB::table('THANH_TOAN')
+            ->whereIn('MaHD', $invoiceIds)
+            ->where('TrangThaiGD', 'Thanh cong')
+            ->whereDate('ThoiGian', '>=', $d['from'])
+            ->whereDate('ThoiGian', '<=', $d['to']);
+
+        $totalCollected = (float) (clone $successfulPayments)->sum('SoTien');
+        $paymentCount = (clone $successfulPayments)->count();
+        $dailyRevenue = (clone $successfulPayments)
+            ->selectRaw('DATE(ThoiGian) as Ngay, SUM(SoTien) as DoanhThu')
+            ->groupByRaw('DATE(ThoiGian)')
+            ->orderBy('Ngay')->get();
+
+        $vouchers = DB::table('PHIEU_THU_CHI')->where('MaCS', $branch)
+            ->where('TrangThai', 'Da duyet')
+            ->whereDate('NgayLap', '>=', $d['from'])
+            ->whereDate('NgayLap', '<=', $d['to']);
+        $otherIncome = (float) (clone $vouchers)->where('Loai', 'Thu')->sum('SoTien');
+        $otherExpense = (float) (clone $vouchers)->where('Loai', 'Chi')->sum('SoTien');
+
+        $stockValue = (float) DB::table('CT_PHIEU_NHAP as ct')
+            ->join('PHIEU_NHAP_KHO as pn', 'pn.MaPN', '=', 'ct.MaPN')
+            ->where('pn.MaCS', $branch)->where('pn.TrangThai', 'Da xac nhan')
+            ->sum(DB::raw('ct.SoLuongCon * ct.DonGia'));
+
+        $pendingPurchaseOrders = DB::table('DON_DAT_HANG as po')
+            ->join('NHA_CUNG_CAP as ncc', 'ncc.MaNCC', '=', 'po.MaNCC')
+            ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'po.MaNV')
+            ->where('po.MaCS', $branch)->where('po.TrangThai', 'Cho duyet')
+            ->orderBy('po.NgayLap')
+            ->limit(10)
+            ->get(['po.MaPO', 'po.NgayLap', 'po.TrangThai', 'ncc.TenNCC', 'nv.HoTen as NguoiLap']);
+
+        $pendingBudgets = DB::table('KE_HOACH_NGAN_SACH as kh')
+            ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'kh.MaNVLap')
+            ->where('kh.MaCS', $branch)->where('kh.TrangThai', 'Cho duyet')
+            ->orderBy('kh.MaKHNS')
+            ->limit(10)
+            ->get(['kh.MaKHNS', 'kh.TenKH', 'kh.KyKeHoach', 'kh.SoTien', 'kh.TrangThai', 'nv.HoTen as NguoiLap']);
+
+        $pendingVouchers = DB::table('PHIEU_THU_CHI')
+            ->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count();
+
         return response()->json([
             'DoanhThuThanhToan' => $totalCollected,
             'ThuKhac' => $otherIncome,
             'ChiKhac' => $otherExpense,
+            'ChiPhi' => $otherExpense,
+            'TongChi' => $otherExpense,
             'TongThu' => $totalCollected + $otherIncome,
             'ChenhLechThuChi' => $totalCollected + $otherIncome - $otherExpense,
-            'GiaoDichThanhCong' => $payments->count(),
-            'PhieuChoDuyet' => DB::table('PHIEU_THU_CHI')->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count(),
+            'GiaoDichThanhCong' => $paymentCount,
+            'DoanhThuTheoNgay' => $dailyRevenue,
+            'GiaTriTonKho' => $stockValue,
+            'POChoDuyet' => DB::table('DON_DAT_HANG')->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count(),
+            'KeHoachChoDuyet' => DB::table('KE_HOACH_NGAN_SACH')->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count(),
+            'PhieuChoDuyet' => $pendingVouchers,
+            'SoMucChoDuyet' => $pendingPurchaseOrders->count() + $pendingBudgets->count() + $pendingVouchers,
+            'POCanDuyet' => $pendingPurchaseOrders,
+            'KeHoachCanDuyet' => $pendingBudgets,
         ]);
     }
 
