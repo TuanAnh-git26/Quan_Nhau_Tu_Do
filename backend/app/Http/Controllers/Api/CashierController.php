@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -474,26 +475,49 @@ class CashierController extends Controller
     /** Giảm giá thủ công; yêu cầu ghi nhận nhân viên giám sát phê duyệt. */
     public function setManualDiscount(Request $request, int $id)
     {
+        $this->assertActorRole(['Thu ngan']);
         $data = $request->validate([
             'SoTienGiam' => ['required', 'numeric', 'min:0'],
-            'MaNVDuyet' => ['nullable', 'integer', 'exists:NHAN_VIEN,MaNV'],
             'MaNV' => ['required', 'integer', 'exists:NHAN_VIEN,MaNV'],
+            'TenDangNhapGiamSat' => ['nullable', 'string', 'max:100'],
+            'MatKhauGiamSat' => ['nullable', 'string', 'max:255'],
         ]);
 
-        DB::transaction(function () use ($id, $data) {
+        DB::transaction(function () use ($request, $id, $data) {
             $invoice = DB::table('HOA_DON')->where('MaHD', $id)->lockForUpdate()->first();
             abort_unless($invoice, 404, 'Không tìm thấy hóa đơn.');
             $this->assertInvoiceOpen($invoice);
             $branchId = $this->invoiceBranchId($id);
             $this->assertEmployeeForBranch((int) $data['MaNV'], $branchId);
 
-            $managerId = $data['MaNVDuyet'] ?? null;
             $manual = (float) $data['SoTienGiam'];
+            $managerId = null;
             if ($manual > 0) {
-                if (!$managerId) {
-                    throw ValidationException::withMessages(['MaNVDuyet' => 'Giảm giá thủ công cần Giám sát/Trưởng ca phê duyệt.']);
+                if (empty($data['TenDangNhapGiamSat']) || empty($data['MatKhauGiamSat'])) {
+                    throw ValidationException::withMessages([
+                        'TenDangNhapGiamSat' => 'Giảm giá thủ công cần xác thực tài khoản và mật khẩu của Giám sát.',
+                    ]);
                 }
-                $this->assertEmployeeForBranch((int) $managerId, $branchId);
+                $supervisor = DB::table('TAI_KHOAN as tk')
+                    ->join('VAI_TRO as vt', 'vt.MaVaiTro', '=', 'tk.MaVaiTro')
+                    ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'tk.MaNV')
+                    ->where('tk.TenDangNhap', $data['TenDangNhapGiamSat'])
+                    ->where('tk.TrangThai', 'Hoat dong')
+                    ->where('vt.TenVaiTro', 'Giam sat')
+                    ->where('nv.MaCS', $branchId)
+                    ->where('nv.TrangThai', 'Dang lam')
+                    ->first(['tk.MatKhauHash', 'nv.MaNV']);
+                if (!$supervisor || !Hash::check($data['MatKhauGiamSat'], $supervisor->MatKhauHash)) {
+                    throw ValidationException::withMessages([
+                        'TenDangNhapGiamSat' => 'Thông tin xác thực Giám sát không hợp lệ hoặc không thuộc cơ sở này.',
+                    ]);
+                }
+                $managerId = (int) $supervisor->MaNV;
+                if ($managerId === (int) $data['MaNV']) {
+                    throw ValidationException::withMessages([
+                        'TenDangNhapGiamSat' => 'Người phê duyệt phải khác nhân viên lập hóa đơn.',
+                    ]);
+                }
             }
 
             $total = (float) DB::table('CT_HOA_DON')->where('MaHD', $id)->sum('ThanhTien');
@@ -508,8 +532,8 @@ class CashierController extends Controller
                 'MaNVDuyet' => $managerId,
             ]);
             $this->finalizeInvoiceIfPaid($id);
-
-            $this->writeLog('Giam gia thu cong', 'HOA_DON', "Cập nhật giảm giá thủ công hóa đơn #{$id}: {$manual}; người duyệt: " . ($managerId ?: 'không có'));
+            $this->writeLog('Giam gia thu cong', 'HOA_DON',
+                "Cập nhật giảm giá thủ công hóa đơn #{$id}: {$manual}; người duyệt: " . ($managerId ?: 'không có'));
         });
 
         return $this->showInvoice($id);
@@ -813,6 +837,7 @@ class CashierController extends Controller
     /** Lập báo cáo và bàn giao ca; TienMat lưu số tiền mặt kiểm đếm thực tế. */
     public function closeShift(Request $request)
     {
+        $this->assertActorRole(['Thu ngan']);
         $data = $request->validate([
             'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
             'MaCa' => ['required', 'integer', 'exists:CA_LAM,MaCa'],
@@ -873,6 +898,7 @@ class CashierController extends Controller
     /** Xác nhận đối soát báo cáo; không cho chốt khi còn giao dịch điện tử chờ xác minh. */
     public function confirmShiftReport(Request $request, int $id)
     {
+        $this->assertActorRole(['Giam sat']);
         $data = $request->validate([
             'MaNV' => ['required', 'integer', 'exists:NHAN_VIEN,MaNV'],
         ]);
@@ -927,6 +953,10 @@ class CashierController extends Controller
 
     private function assertEmployeeForBranch(int $employeeId, int $branchId): object
     {
+        $actor = request()->user();
+        if ($actor && $actor->TenVaiTro !== 'Quan tri he thong' && (int) $actor->MaNV !== $employeeId) {
+            abort(403, 'Không được ghi nhận giao dịch dưới danh tính nhân viên khác.');
+        }
         $employee = DB::table('NHAN_VIEN')->where('MaNV', $employeeId)->first(['MaNV', 'MaCS', 'HoTen', 'TrangThai']);
         if (!$employee || $employee->TrangThai !== 'Dang lam' || (int) $employee->MaCS !== $branchId) {
             throw ValidationException::withMessages(['MaNV' => 'Nhân viên không hoạt động hoặc không thuộc cơ sở đang thao tác.']);
@@ -1120,6 +1150,13 @@ class CashierController extends Controller
         return ['start' => $start, 'end' => $end];
     }
 
+    private function assertActorRole(array $roles): void
+    {
+        $actor = request()->user();
+        if (!$actor || $actor->TenVaiTro === 'Quan tri he thong') return;
+        abort_unless(in_array((string) $actor->TenVaiTro, $roles, true), 403, 'Vai trò hiện tại không được thực hiện thao tác này.');
+    }
+
     private function writeLog(string $action, string $entity, string $details): void
     {
         try {
@@ -1128,7 +1165,7 @@ class CashierController extends Controller
                 'HanhDong' => mb_substr($action, 0, 100),
                 'DoiTuong' => mb_substr($entity, 0, 100),
                 'NoiDungThayDoi' => $details,
-                'MaTK' => null,
+                'MaTK' => request()->user()?->getAuthIdentifier(),
             ]);
         } catch (\Throwable $exception) {
             // Nhật ký không được làm hỏng giao dịch nghiệp vụ chính.
