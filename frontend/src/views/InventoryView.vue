@@ -484,19 +484,18 @@ function openIssue() {
   modal.value = 'issue'
 }
 async function saveIssue() {
-  if (!confirm('Xác nhận xuất kho? Hệ thống sẽ tự động chọn lô theo FIFO và trừ tồn ngay.')) return
+  throw new Error('Xuất kho trực tiếp đã ngừng. Kho chỉ xác nhận các đề nghị do Bếp/Bar gửi.')
+}
+async function confirmIssue(item) {
+  if (!confirm('Xác nhận xuất kho cho đề nghị #' + item.MaPX + '? Hệ thống sẽ trừ tồn theo FIFO.')) return
   saving.value = true
   try {
-    await api.post('/inventory/issues', {
-      ...issueForm.value,
-      MaCS: Number(branchId.value),
-      MaNV: Number(issueForm.value.MaNV || employeeId.value),
-      items: issueForm.value.items.map(item => ({ MaNL: Number(item.MaNL), SoLuongXuat: Number(item.SoLuongXuat) }))
+    await api.post('/inventory/issues/' + item.MaPX + '/confirm', {
+      MaCS: Number(branchId.value), MaNV: Number(employeeId.value),
     })
-    modal.value = ''
-    setMessage('Đã xuất kho theo FIFO.')
+    setMessage('Đã xác nhận đề nghị và xuất kho theo FIFO.')
     await loadAll()
-  } catch (err) { handleError(err, 'Không thể xuất kho.') }
+  } catch (err) { handleError(err, 'Không thể xác nhận xuất kho.') }
   finally { saving.value = false }
 }
 
