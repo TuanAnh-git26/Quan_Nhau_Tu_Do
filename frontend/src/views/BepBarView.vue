@@ -2,9 +2,16 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import api from '../services/api'
 
+const props = defineProps({ user: { type: Object, required: true } })
+const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
+const canChangeDepartment = isAdmin
 const branches = ref([])
-const selectedBranch = ref('')
-const department = ref('Bep')
+const selectedBranch = ref(String(props.user?.MaCS || ''))
+const department = ref(props.user?.TenVaiTro === 'Bar' ? 'Bar' : 'Bep')
+const ingredients = ref([])
+const stockRequests = ref([])
+const requestForm = ref({ items: [{ MaNL: '', SoLuongDeNghi: 1 }] })
+const requestBusy = ref(false)
 const items = ref([])
 const notifications = ref([])
 const search = ref('')
@@ -103,8 +110,11 @@ async function loadInitial() {
     const { data } = await api.get('/branches')
     branches.value = Array.isArray(data) ? data : []
     if (branches.value.length) {
-      selectedBranch.value = String(branches.value[0].MaCS)
-      await loadItems(true)
+      if (!isAdmin.value && props.user?.MaCS) {
+        branches.value = branches.value.filter(x => Number(x.MaCS) === Number(props.user.MaCS))
+      }
+      selectedBranch.value = String(props.user?.MaCS || branches.value[0].MaCS)
+      await Promise.all([loadItems(true), loadStockRequests()])
     } else {
       error.value = 'Chưa có cơ sở đang hoạt động. Vui lòng tạo cơ sở trước.'
     }
@@ -126,13 +136,48 @@ async function markNotificationRead(item) {
 }
 
 async function changeDepartment(value) {
-  if (department.value === value) return
+  if (!isAdmin.value || department.value === value) return
   department.value = value
   search.value = ''
   selectedStatus.value = ''
   page.value = 1
   success.value = ''
-  await loadItems()
+  await Promise.all([loadItems(), loadStockRequests()])
+}
+
+async function loadStockRequests() {
+  if (!selectedBranch.value) return
+  try {
+    const [requestResponse, ingredientResponse] = await Promise.all([
+      api.get('/bep-bar/stock-requests', { params: { MaCS: Number(selectedBranch.value), BoPhan: department.value } }),
+      api.get('/ingredients', { params: { MaCS: Number(selectedBranch.value) } }),
+    ])
+    stockRequests.value = Array.isArray(requestResponse.data) ? requestResponse.data : []
+    ingredients.value = (Array.isArray(ingredientResponse.data) ? ingredientResponse.data : []).filter(x => x.TrangThai === 'Dang su dung')
+  } catch (e) {
+    error.value = readError(e, 'Không tải được danh sách nguyên liệu hoặc đề nghị xuất kho.')
+  }
+}
+
+function addRequestLine() { requestForm.value.items.push({ MaNL: '', SoLuongDeNghi: 1 }) }
+function removeRequestLine(index) { if (requestForm.value.items.length > 1) requestForm.value.items.splice(index, 1) }
+async function submitStockRequest() {
+  if (requestBusy.value || !selectedBranch.value || !requestForm.value.items.length) return
+  if (requestForm.value.items.some(x => !x.MaNL || Number(x.SoLuongDeNghi) <= 0)) {
+    error.value = 'Vui lòng chọn nguyên liệu và nhập số lượng đề nghị lớn hơn 0.'
+    return
+  }
+  requestBusy.value = true; error.value = ''; success.value = ''
+  try {
+    const { data } = await api.post('/bep-bar/stock-requests', {
+      MaCS: Number(selectedBranch.value), BoPhanNhan: department.value,
+      items: requestForm.value.items.map(x => ({ MaNL: Number(x.MaNL), SoLuongDeNghi: Number(x.SoLuongDeNghi) })),
+    })
+    success.value = data.message || 'Đã gửi đề nghị xuất kho.'
+    requestForm.value = { items: [{ MaNL: '', SoLuongDeNghi: 1 }] }
+    await loadStockRequests()
+  } catch (e) { error.value = readError(e, 'Không thể gửi đề nghị xuất kho.') }
+  finally { requestBusy.value = false }
 }
 
 async function updateItem(item) {
@@ -199,7 +244,7 @@ onUnmounted(() => {
       <div class="kitchen-heading-actions">
         <label class="branch-field">
           <span>Cơ sở</span>
-          <select v-model="selectedBranch" @change="loadItems()">
+          <select v-model="selectedBranch" :disabled="!isAdmin" @change="Promise.all([loadItems(), loadStockRequests()])">
             <option v-for="branch in branches" :key="branch.MaCS" :value="String(branch.MaCS)">
               {{ branch.TenCS }}
             </option>
@@ -212,7 +257,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="department-switch" role="tablist" aria-label="Chọn bộ phận chế biến">
+    <div v-if="canChangeDepartment" class="department-switch" role="tablist" aria-label="Chọn bộ phận chế biến">
       <button :class="{ active: department === 'Bep' }" @click="changeDepartment('Bep')">
         <span class="department-icon">♨</span>
         Bếp
@@ -399,6 +444,45 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <section class="stock-request-panel">
+      <header class="notifications-heading">
+        <div>
+          <h2>Đề nghị xuất kho nguyên liệu</h2>
+          <p>Bộ phận {{ department === 'Bep' ? 'Bếp' : 'Bar' }} gửi nhu cầu; Kho kiểm tra tồn và xác nhận xuất theo FIFO</p>
+        </div>
+        <span class="notification-unread">{{ stockRequests.filter(x => x.TrangThai === 'Cho xac nhan').length }} chờ Kho</span>
+      </header>
+      <form class="stock-request-form" @submit.prevent="submitStockRequest">
+        <div v-for="(line, index) in requestForm.items" :key="index" class="stock-request-line">
+          <label><span>Nguyên liệu</span>
+            <select v-model="line.MaNL" required>
+              <option value="">Chọn nguyên liệu</option>
+              <option v-for="ingredient in ingredients" :key="ingredient.MaNL" :value="String(ingredient.MaNL)">{{ ingredient.TenNL }} · {{ ingredient.DonViTinh }}</option>
+            </select>
+          </label>
+          <label><span>Số lượng đề nghị</span><input v-model.number="line.SoLuongDeNghi" type="number" min="0.001" step="0.001" required /></label>
+          <button type="button" class="read-notification" :disabled="requestForm.items.length === 1" @click="removeRequestLine(index)">Xóa</button>
+        </div>
+        <div class="stock-request-actions">
+          <button type="button" class="read-notification" @click="addRequestLine">+ Thêm nguyên liệu</button>
+          <button type="submit" class="ticket-action action-new" :disabled="requestBusy || !ingredients.length">{{ requestBusy ? 'Đang gửi...' : 'Gửi đề nghị xuất kho' }}</button>
+        </div>
+        <p class="stock-request-note">Gửi đề nghị không làm giảm tồn kho. Số lượng chỉ được trừ sau khi Kho xác nhận phiếu xuất.</p>
+      </form>
+      <div class="stock-request-history">
+        <h3>Lịch sử đề nghị</h3>
+        <article v-for="request in stockRequests" :key="request.MaPX" class="notification-row">
+          <span class="notification-check">#{{ request.MaPX }}</span>
+          <div class="notification-copy">
+            <strong>{{ request.TrangThai === 'Cho xac nhan' ? 'Đang chờ Kho xác nhận' : request.TrangThai === 'Da xuat' ? 'Kho đã xuất nguyên liệu' : 'Đã hủy' }}</strong>
+            <small>{{ dateText(request.NgayXuat) }} · Người đề nghị: {{ request.NguoiDeNghi || '—' }} · Người xuất: {{ request.NguoiXuat || '—' }}</small>
+            <small v-for="(item, index) in request.items || []" :key="index">{{ item.TenNL }}: đề nghị {{ Number(item.SoLuongDeNghi || 0).toLocaleString('vi-VN') }} {{ item.DonViTinh }} · xuất {{ Number(item.SoLuongXuat || 0).toLocaleString('vi-VN') }} {{ item.DonViTinh }}</small>
+          </div>
+        </article>
+        <div v-if="!stockRequests.length" class="notifications-empty">Chưa có đề nghị xuất kho nào cho bộ phận này.</div>
+      </div>
+    </section>
+
     <div class="kitchen-footnote">
       <span>Quy trình: Chờ chế biến → Đã nhận → Đang chế biến → Hoàn tất.</span>
       <span>Chỉ bộ phận phụ trách mới được cập nhật trạng thái món.</span>
@@ -512,4 +596,15 @@ onUnmounted(() => {
 .notifications-empty { padding:22px 10px 12px; text-align:center; color:#9aa6b1; font-size:10px; }
 @media (max-width: 1100px) { .kitchen-board { grid-template-columns:1fr; } .board-column { min-height:220px; } .column-empty { min-height:140px; } .kitchen-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width: 680px) { .kitchen-heading { align-items:stretch; flex-direction:column; } .kitchen-heading-actions { align-items:stretch; } .branch-field, .branch-field select { min-width:0; width:100%; } .kitchen-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .kitchen-toolbar { align-items:stretch; flex-direction:column; } .kitchen-search { width:100%; } .kitchen-footnote { flex-direction:column; } }
+
+.stock-request-panel { margin-top: 22px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 18px; background: #fff; }
+.stock-request-form { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; }
+.stock-request-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 220px) auto; gap: 12px; align-items: end; }
+.stock-request-line label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: #475569; }
+.stock-request-line select, .stock-request-line input { width: 100%; min-height: 40px; border: 1px solid #cbd5e1; border-radius: 9px; padding: 8px 10px; background: white; }
+.stock-request-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.stock-request-note { color: #64748b; font-size: 12px; }
+.stock-request-history { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 16px; }
+.stock-request-history h3 { font-weight: 700; }
+@media (max-width: 640px) { .stock-request-line { grid-template-columns: 1fr; } }
 </style>
