@@ -4,13 +4,23 @@ import api from '../services/api'
 import '../styles/qntd-modules.css'
 import PaginationBar from '../components/PaginationBar.vue'
 
-const tabs = [
-  { id: 'employees', name: 'Hồ sơ nhân viên' },
-  { id: 'contracts', name: 'Hợp đồng' }, { id: 'shifts', name: 'Ca làm' },
-  { id: 'attendance', name: 'Chấm công' }, { id: 'payrolls', name: 'Bảng lương' }
+const props = defineProps({ user: { type: Object, required: true } })
+const can = uc => (props.user?.Quyen || []).includes('*') || (props.user?.Quyen || []).includes(uc)
+const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
+const isHR = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Nhan su')
+const isAccountant = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Ke toan')
+const isSupervisor = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Giam sat')
+const allTabs = [
+  { id: 'employees', name: 'Hồ sơ nhân viên', ucs: ['UC6.1'] },
+  { id: 'contracts', name: 'Hợp đồng', ucs: ['UC6.1'] },
+  { id: 'shifts', name: 'Ca làm', ucs: ['UC6.2'] },
+  { id: 'attendance', name: 'Chấm công / điều phối', ucs: ['UC6.2', 'UC6.3'] },
+  { id: 'payrolls', name: 'Bảng lương', ucs: ['UC6.4'] },
 ]
-const tab = ref('employees'), branches = ref([]), employees = ref([]), positions = ref([]), shifts = ref([])
-const branch = ref(''), month = ref(new Date().toLocaleDateString('sv-SE').slice(0, 7)), q = ref('')
+const tabs = computed(() => allTabs.filter(item => item.ucs.some(can)))
+const defaultTab = isAccountant.value ? 'payrolls' : isSupervisor.value && !isHR.value ? 'attendance' : 'employees'
+const tab = ref(defaultTab), branches = ref([]), employees = ref([]), positions = ref([]), shifts = ref([])
+const branch = ref(String(props.user?.MaCS || '')), month = ref(new Date().toLocaleDateString('sv-SE').slice(0, 7)), q = ref('')
 const contextError = ref('')
 const rows = ref([]), total = ref(0), page = ref(1), pageSize = ref(10), dashboard = ref({})
 const busy = ref(false), error = ref(''), success = ref(''), editing = ref(false), form = ref({})
@@ -83,37 +93,40 @@ function emptyForm() {
 async function base() {
   contextError.value = ''
   try {
-    const [branchResult, meResult] = await Promise.allSettled([
-      api.get('/branches'),
-      api.get('/auth/me')
-    ])
-    if (branchResult.status !== 'fulfilled') {
-      contextError.value = 'Không lấy được danh sách cơ sở: ' + err(branchResult.reason)
+    const branchResponse = await api.get('/branches')
+    const allBranches = result(branchResponse.data).data
+    branches.value = isAdmin.value ? allBranches : allBranches.filter(x => Number(x.MaCS) === Number(props.user?.MaCS))
+    if (!branch.value && branches.value.length) branch.value = String(branches.value[0].MaCS)
+    if (!branches.value.length) {
+      contextError.value = 'Không có cơ sở đang hoạt động hoặc cơ sở chưa được phân quyền.'
       return
     }
-    branches.value = result(branchResult.value.data).data
-    const user = meResult.status === 'fulfilled'
-      ? (meResult.value.data?.data ?? meResult.value.data) : {}
-    if (!branch.value && user?.MaCS && branches.value.some(x => Number(x.MaCS) === Number(user.MaCS))) {
-      branch.value = String(user.MaCS)
-    }
-    if (!branch.value && branches.value.length) branch.value = String(branches.value[0].MaCS)
-    if (!branches.value.length) contextError.value = 'Không có cơ sở đang hoạt động hoặc cơ sở chưa được phân quyền.'
+
     const params = branch.value ? { MaCS: branch.value } : {}
-    const [positionsResult, employeesResult, shiftsResult] = await Promise.allSettled([
-      api.get('/hr/positions'),
-      api.get('/hr/employees', { params: { ...params, per_page: 100 } }),
-      api.get('/hr/shifts', { params })
-    ])
-    if (positionsResult.status === 'fulfilled') positions.value = result(positionsResult.value.data).data
-    else contextError.value += ' Không tải được vị trí: ' + err(positionsResult.reason)
-    if (employeesResult.status === 'fulfilled') employees.value = result(employeesResult.value.data).data
-    else contextError.value += ' Không tải được nhân viên: ' + err(employeesResult.reason)
-    if (shiftsResult.status === 'fulfilled') shifts.value = result(shiftsResult.value.data).data
-    else contextError.value += ' Không tải được ca làm: ' + err(shiftsResult.reason)
+    const jobs = []
+    if (can('UC6.1')) jobs.push(['positions', api.get('/hr/positions')])
+    if (['UC6.1','UC6.2','UC6.3','UC6.4'].some(can)) jobs.push(['employees', api.get('/hr/employees', { params: { ...params, per_page: 100 } })])
+    if (can('UC6.2') || can('UC6.3')) jobs.push(['shifts', api.get('/hr/shifts', { params })])
+    const results = await Promise.allSettled(jobs.map(x => x[1]))
+    results.forEach((resultItem, index) => {
+      const key = jobs[index][0]
+      if (resultItem.status === 'fulfilled') {
+        const rows = result(resultItem.value.data).data
+        if (key === 'positions') positions.value = rows
+        if (key === 'employees') employees.value = rows
+        if (key === 'shifts') shifts.value = rows
+      } else {
+        contextError.value += (contextError.value ? ' ' : '') + 'Không tải được ' + key + ': ' + err(resultItem.reason)
+      }
+    })
+    if (!tabs.value.some(x => x.id === tab.value)) tab.value = tabs.value[0]?.id || 'employees'
   } catch (e) { contextError.value = 'Lỗi dữ liệu nền: ' + err(e) }
 }
 async function load() {
+  if (!tabs.value.some(x => x.id === tab.value)) {
+    tab.value = tabs.value[0]?.id || 'employees'
+    if (!tab.value) return
+  }
   busy.value = true
   error.value = ''
   payrollWarnings.value = []
@@ -122,10 +135,13 @@ async function load() {
     if (branch.value && tab.value !== 'positions') params.MaCS = branch.value
     if (q.value && ['employees','contracts','payrolls'].includes(tab.value)) params.q = q.value
     if (tab.value === 'payrolls') params.KyLuong = month.value + '-01'
-    const [listResult, dashboardResult] = await Promise.allSettled([
-      api.get('/hr/' + tab.value, { params }),
-      api.get('/hr/dashboard', { params: { MaCS: branch.value || undefined } })
-    ])
+
+    const listPromise = api.get('/hr/' + tab.value, { params })
+    const dashboardPromise = (can('UC6.1') || can('UC6.2') || can('UC6.4'))
+      ? api.get('/hr/dashboard', { params: { MaCS: branch.value || undefined } })
+      : Promise.resolve(null)
+    const [listResult, dashboardResult] = await Promise.allSettled([listPromise, dashboardPromise])
+
     if (listResult.status === 'fulfilled') {
       const payload = listResult.value.data
       const paged = result(payload)
@@ -137,8 +153,9 @@ async function load() {
       rows.value = []; total.value = 0
       error.value = 'Không tải được ' + tabName.value + ': ' + err(listResult.reason)
     }
-    if (dashboardResult.status === 'fulfilled') dashboard.value = dashboardResult.value.data?.data ?? dashboardResult.value.data
-    else error.value += (error.value ? ' | ' : '') + 'Không tải được tổng quan: ' + err(dashboardResult.reason)
+    if (dashboardResult.status === 'fulfilled' && dashboardResult.value) {
+      dashboard.value = dashboardResult.value.data?.data ?? dashboardResult.value.data
+    }
     if (tab.value === 'payrolls' && listResult.status === 'fulfilled') {
       try { await getPayrollAttendance() }
       catch (e) { payrollWarnings.value.push('Không tổng hợp được chấm công: ' + err(e)) }
@@ -197,6 +214,10 @@ async function submitInput() {
   await action(row, kind, value)
 }
 async function action(row, actionName, inputValue) {
+  if (tab.value === 'payrolls') {
+    if (['submit'].includes(actionName) && !isHR.value) { error.value = 'Chỉ Nhân sự được trình bảng lương.'; return }
+    if (['return','approve'].includes(actionName) && !isAccountant.value) { error.value = 'Chỉ Kế toán được kiểm tra và chốt bảng lương.'; return }
+  }
   const ids = { employees:'MaNV', positions:'MaVT', contracts:'MaHDLD', shifts:'MaCa', attendance:'MaCC', payrolls:'MaBL' }
   const id = row[ids[tab.value]]; let url = `/hr/${tab.value}/${id}`; let payload = {}
   if (busy.value) return
@@ -213,6 +234,7 @@ async function action(row, actionName, inputValue) {
   } catch(e) { error.value = err(e) } finally { busy.value = false }
 }
 async function generatePayroll() {
+  if (!isHR.value) { error.value = 'Chỉ Nhân sự được lập bảng lương.'; return }
   if (!confirm('Tạo bảng lương nháp cho các nhân viên trong kỳ đã chọn?')) return
   busy.value = true; error.value = ''
   try {
