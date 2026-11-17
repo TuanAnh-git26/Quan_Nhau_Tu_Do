@@ -197,7 +197,7 @@ onMounted(init)
       </div>
       <div v-if="tab === 'overview'" class="space-y-5">
         <div class="grid gap-3 md:grid-cols-3">
-          <div v-for="[key, title] in [['DoanhThuThanhToan', 'Doanh thu đã thu'], ['ThuKhac', 'Thu khác đã duyệt'], ['ChiKhac', 'Chi phí qua phiếu chi đã duyệt'], ['TongThu', 'Tổng thu'], ['ChenhLechThuChi', 'Chênh lệch thu – chi'], ['GiaoDichThanhCong', 'Giao dịch thành công'], ['GiaTriTonKho', 'Giá trị tồn kho hiện tại'], ['POChoDuyet', 'PO chờ duyệt'], ['KeHoachChoDuyet', 'Kế hoạch ngân sách chờ duyệt']]" :key="key" class="rounded-xl bg-slate-50 p-5">
+          <div v-for="[key, title] in [['DoanhThuThanhToan', 'Doanh thu đã thu'], ['ThuKhac', 'Thu khác đã duyệt'], ['ChiKhac', 'Chi phí qua phiếu chi đã duyệt'], ['TongThu', 'Tổng thu'], ['ChenhLechThuChi', 'Chênh lệch thu – chi'], ['GiaoDichThanhCong', 'Giao dịch thành công'], ['GiaTriTonKho', 'Giá trị tồn kho hiện tại'], ['POChoDuyet', 'PO chờ duyệt'], ['KeHoachChoDuyet', 'Kế hoạch ngân sách chờ duyệt']]" :key="key" v-if="!['POChoDuyet','KeHoachChoDuyet'].includes(key) || isBoard" class="rounded-xl bg-slate-50 p-5">
             <p class="text-sm text-slate-500">{{ title }}</p>
             <strong class="mt-2 block text-2xl">{{ ['GiaoDichThanhCong','POChoDuyet','KeHoachChoDuyet'].includes(key) ? (stats[key] || 0) : cash(stats[key]) }}</strong>
           </div>
