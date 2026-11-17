@@ -234,17 +234,20 @@ import { computed, onMounted, ref, watch } from 'vue'
 import api from '../services/api'
 import '../styles/qntd-modules.css'
 
-const tabs = [
-  { key: 'orders', label: 'Order chờ thanh toán' },
-  { key: 'invoices', label: 'Hóa đơn & thanh toán' },
-  { key: 'shift', label: 'Đối soát cuối ca' },
-]
-const activeTab = ref('orders')
+const props = defineProps({ user: { type: Object, required: true } })
+const can = uc => (props.user?.Quyen || []).includes('*') || (props.user?.Quyen || []).includes(uc)
+const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
+const canCashier = computed(() => isAdmin.value || ['UC5.1', 'UC5.2', 'UC5.4'].some(can))
+const tabs = computed(() => [
+  ...(can('UC5.1') || can('UC5.2') || can('UC5.4') ? [{ key: 'orders', label: 'Order chờ thanh toán' }, { key: 'invoices', label: 'Hóa đơn & thanh toán' }] : []),
+  ...(can('UC5.6') ? [{ key: 'shift', label: 'Đối soát cuối ca' }] : []),
+])
+const activeTab = ref(can('UC5.1') || can('UC5.2') || can('UC5.4') ? 'orders' : 'shift')
 const branches = ref([])
 const employees = ref([])
 const shifts = ref([])
-const MaCS = ref('')
-const MaNV = ref('')
+const MaCS = ref(String(props.user?.MaCS || ''))
+const MaNV = ref(String(props.user?.MaNV || ''))
 const MaCa = ref('')
 const error = ref('')
 const notice = ref('')
@@ -261,7 +264,8 @@ const invoiceStatus = ref('')
 const promotions = ref([])
 const promotionId = ref('')
 const manualDiscount = ref(0)
-const MaNVDuyet = ref('')
+const supervisorUsername = ref('')
+const supervisorPassword = ref('')
 const paymentMethod = ref('Tien mat')
 const paymentAmount = ref(0)
 const splitOpen = ref(false)
@@ -301,15 +305,11 @@ function statusText(value) {
 async function loadBranches() {
   try {
     const { data } = await api.get('/branches')
-    branches.value = Array.isArray(data) ? data : (data.data || [])
-    const profile = await api.get('/auth/me').then(r => r.data).catch(() => null)
-    const sessionBranch = profile?.MaCS ?? profile?.data?.MaCS
-    if (!MaCS.value && sessionBranch && branches.value.some(b => Number(b.MaCS) === Number(sessionBranch))) {
-      MaCS.value = String(sessionBranch)
-    }
+    const all = Array.isArray(data) ? data : (data.data || [])
+    branches.value = isAdmin.value ? all : all.filter(b => Number(b.MaCS) === Number(props.user?.MaCS))
     if (!MaCS.value && branches.value.length) MaCS.value = String(branches.value[0].MaCS)
     if (!branches.value.length) {
-      error.value = 'Không có cơ sở khả dụng. Hãy kiểm tra GET /api/branches.'
+      error.value = 'Không có cơ sở khả dụng hoặc tài khoản chưa được gán cơ sở.'
       return
     }
     await loadContext()
@@ -319,23 +319,36 @@ async function loadContext() {
   clearMessages()
   if (!MaCS.value) return
   try {
-    const [employeeRes, shiftRes] = await Promise.all([
-      api.get('/employees', { params: { MaCS: MaCS.value } }),
-      api.get('/cashier/shifts', { params: { MaCS: MaCS.value } }),
-    ])
-    employees.value = Array.isArray(employeeRes.data) ? employeeRes.data : (employeeRes.data.data || [])
-    shifts.value = Array.isArray(shiftRes.data) ? shiftRes.data : []
-    if (!employees.value.some(item => String(item.MaNV) === MaNV.value)) {
-      MaNV.value = String(employees.value.find(item => item.TrangThai === 'Dang lam')?.MaNV || employees.value[0]?.MaNV || '')
+    if (isAdmin.value) {
+      const employeeRes = await api.get('/employees', { params: { MaCS: MaCS.value } })
+      employees.value = Array.isArray(employeeRes.data) ? employeeRes.data : (employeeRes.data.data || [])
+      if (!employees.value.some(item => String(item.MaNV) === MaNV.value)) {
+        MaNV.value = String(employees.value.find(item => item.TrangThai === 'Dang lam')?.MaNV || '')
+      }
+    } else {
+      employees.value = props.user?.MaNV
+        ? [{ MaNV: props.user.MaNV, HoTen: props.user.HoTen, MaCS: props.user.MaCS, TrangThai: 'Dang lam' }]
+        : []
+      MaNV.value = String(props.user?.MaNV || '')
     }
+    if (can('UC5.6')) {
+      const { data } = await api.get('/cashier/shifts', { params: { MaCS: MaCS.value } })
+      shifts.value = Array.isArray(data) ? data : []
+    } else shifts.value = []
     if (!shifts.value.some(shift => String(shift.MaCa) === MaCa.value)) MaCa.value = ''
     if (!MaCa.value && shifts.value.length) MaCa.value = String(shifts.value[0].MaCa)
-    if (!employees.value.length) error.value = 'Cơ sở chưa có nhân viên hoạt động. Kiểm tra dữ liệu nhân viên trong phân hệ Nhân sự.'
-    await Promise.all([loadOrders(1), loadInvoices(1), loadPromotions(), loadReports(1)])
+    if (!MaNV.value && canCashier.value) error.value = 'Tài khoản chưa được liên kết với nhân viên.'
+    if (!tabs.value.some(item => item.key === activeTab.value)) activeTab.value = tabs.value[0]?.key || 'shift'
+    await Promise.all([
+      can('UC5.1') ? loadOrders(1) : Promise.resolve(),
+      can('UC5.2') || can('UC5.4') ? loadInvoices(1) : Promise.resolve(),
+      can('UC5.3') ? loadPromotions() : Promise.resolve(),
+      can('UC5.6') ? loadReports(1) : Promise.resolve(),
+    ])
   } catch (err) { error.value = messageFromException(err) }
 }
 async function loadOrders(page = 1) {
-  if (!canLoad.value) return
+  if (!canLoad.value || !can('UC5.1')) return
   loadingOrders.value = true
   try {
     const { data } = await api.get('/cashier/orders', { params: { MaCS: MaCS.value, q: orderSearch.value || undefined, page, per_page: 10 } })
@@ -361,7 +374,7 @@ async function createInvoice() {
   finally { busy.value = false }
 }
 async function loadInvoices(page = 1) {
-  if (!canLoad.value) return
+  if (!canLoad.value || !(can('UC5.2') || can('UC5.4'))) return
   try {
     const { data } = await api.get('/cashier/invoices', { params: { MaCS: MaCS.value, TrangThai: invoiceStatus.value || undefined, q: invoiceSearch.value || undefined, page, per_page: 10 } })
     invoices.value = data
@@ -378,6 +391,7 @@ async function selectInvoice(id) {
   } catch (err) { error.value = messageFromException(err) }
 }
 async function loadPromotions() {
+  if (!can('UC5.3')) return
   try { const { data } = await api.get('/cashier/promotions'); promotions.value = Array.isArray(data) ? data : [] }
   catch (err) { error.value = messageFromException(err) }
 }
@@ -394,8 +408,8 @@ async function saveManualDiscount() {
   if (!selectedInvoice.value || !MaNV.value) return
   busy.value = true; clearMessages()
   try {
-    const { data } = await api.put(`/cashier/invoices/${selectedInvoice.value.MaHD}/discount`, { SoTienGiam: Number(manualDiscount.value || 0), MaNV: Number(MaNV.value), MaNVDuyet: MaNVDuyet.value ? Number(MaNVDuyet.value) : null })
-    selectedInvoice.value = data; notice.value = 'Đã cập nhật giảm giá.'; await loadInvoices(invoices.value.current_page || 1)
+    const { data } = await api.put(`/cashier/invoices/${selectedInvoice.value.MaHD}/discount`, { SoTienGiam: Number(manualDiscount.value || 0), MaNV: Number(MaNV.value), TenDangNhapGiamSat: supervisorUsername.value || null, MatKhauGiamSat: supervisorPassword.value || null })
+    selectedInvoice.value = data; supervisorPassword.value = ''; notice.value = 'Đã cập nhật giảm giá.'; await loadInvoices(invoices.value.current_page || 1)
   } catch (err) { error.value = messageFromException(err) }
   finally { busy.value = false }
 }
@@ -455,11 +469,12 @@ async function loadShiftSummary() {
   catch (err) { error.value = messageFromException(err) }
 }
 async function loadReports(page = 1) {
-  if (!MaCS.value) return
+  if (!MaCS.value || !can('UC5.6')) return
   try { const { data } = await api.get('/cashier/shift-reports', { params: { MaCS: MaCS.value, page, per_page: 10 } }); reports.value = data }
   catch (err) { error.value = messageFromException(err) }
 }
 async function closeShift() {
+  if (!isAdmin.value && props.user?.TenVaiTro !== 'Thu ngan') { error.value = 'Chỉ Thu ngân được lập báo cáo bàn giao ca.'; return }
   if (!shiftSummary.value || !MaCS.value || !MaCa.value || !MaNV.value) return
   if (!window.confirm('Xác nhận lập báo cáo và bàn giao ca?')) return
   busy.value = true; clearMessages()
@@ -470,6 +485,7 @@ async function closeShift() {
   finally { busy.value = false }
 }
 async function confirmReport(id) {
+  if (!isAdmin.value && props.user?.TenVaiTro !== 'Giam sat') { error.value = 'Chỉ Giám sát được xác nhận đối soát cuối ca.'; return }
   if (!MaNV.value || !window.confirm('Xác nhận báo cáo này đã được kiểm tra và đối soát?')) return
   busy.value = true; clearMessages()
   try { const { data } = await api.post(`/cashier/shift-reports/${id}/confirm`, { MaNV: Number(MaNV.value) }); notice.value = data.message; await loadReports(reports.value.current_page || 1) }
