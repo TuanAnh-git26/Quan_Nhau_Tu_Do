@@ -17,6 +17,16 @@ class BepBarController extends Controller
         'Dang che bien' => 'Hoan tat',
     ];
 
+    private function departmentFor(Request $request, ?string $requested): ?string
+    {
+        $role = (string) ($request->user()?->TenVaiTro ?? '');
+        if (in_array($role, ['Bep', 'Bar'], true)) {
+            abort_if($requested && $requested !== $role, 403, 'Tài khoản chỉ được thao tác tại bộ phận được phân công.');
+            return $role;
+        }
+        return $requested;
+    }
+
     private function itemsQuery(int $branchId)
     {
         return DB::table('CHI_TIET_ORDER as ct')
@@ -56,10 +66,8 @@ class BepBarController extends Controller
 
         $query = $this->itemsQuery((int) $data['MaCS']);
 
-        $department = $data['BoPhan'] ?? $data['NoiCheBien'] ?? null;
-        if ($department) {
-            $query->where('dm.NoiCheBien', $department);
-        }
+        $department = $this->departmentFor($request, $data['BoPhan'] ?? $data['NoiCheBien'] ?? null);
+        if ($department) $query->where('dm.NoiCheBien', $department);
 
         $status = $data['TrangThaiMon'] ?? null;
 
@@ -122,7 +130,8 @@ class BepBarController extends Controller
             ],
         ]);
 
-        $result = DB::transaction(function () use ($detailId, $data) {
+        $actorRole = (string) ($request->user()?->TenVaiTro ?? '');
+        $result = DB::transaction(function () use ($request, $detailId, $data, $actorRole) {
             $line = DB::table('CHI_TIET_ORDER')
                 ->where('MaCTOrder', $detailId)
                 ->lockForUpdate()
@@ -161,6 +170,9 @@ class BepBarController extends Controller
                 $data['BoPhan'] !== $info->NoiCheBien
             ) {
                 abort(403, 'Món thuộc bộ phận khác.');
+            }
+            if (in_array($actorRole, ['Bep', 'Bar'], true) && $actorRole !== $info->NoiCheBien) {
+                abort(403, 'Tài khoản không được cập nhật món của bộ phận khác.');
             }
 
             if (!in_array(
@@ -225,6 +237,13 @@ class BepBarController extends Controller
                 ->where('TrangThaiMon', $line->TrangThaiMon)
                 ->update($update);
 
+            DB::table('NHAT_KY')->insert([
+                'ThoiGian' => now(), 'HanhDong' => 'Cap nhat trang thai che bien',
+                'DoiTuong' => 'CHI_TIET_ORDER',
+                'NoiDungThayDoi' => "Món #{$detailId}: {$line->TrangThaiMon} -> {$data['TrangThaiMon']}.",
+                'MaTK' => $request->user()?->getAuthIdentifier(),
+            ]);
+
             return DB::table('CHI_TIET_ORDER')
                 ->where('MaCTOrder', $detailId)
                 ->first();
@@ -245,11 +264,10 @@ class BepBarController extends Controller
         $branch = (int) $data['MaCS'];
         $read = Cache::store('file')->get('bepbar_read_' . $branch, []);
 
-        $rows = $this->itemsQuery($branch)
-            ->where('ct.ThoiGianNhan', '>=', now()->subHours(24))
-            ->orderByDesc('ct.ThoiGianNhan')
-            ->limit(30)
-            ->get();
+        $query = $this->itemsQuery($branch)->where('ct.ThoiGianNhan', '>=', now()->subHours(24));
+        $role = (string) ($request->user()?->TenVaiTro ?? '');
+        if (in_array($role, ['Bep', 'Bar'], true)) $query->where('dm.NoiCheBien', $role);
+        $rows = $query->orderByDesc('ct.ThoiGianNhan')->limit(30)->get();
 
         foreach ($rows as $row) {
             $row->MaTB = $row->MaCTOrder;
@@ -274,6 +292,110 @@ class BepBarController extends Controller
         return response()->json($rows);
     }
 
+    public function stockRequests(Request $request)
+    {
+        $data = $request->validate([
+            'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
+            'BoPhan' => ['nullable', Rule::in(['Bep', 'Bar'])],
+        ]);
+        $department = $this->departmentFor($request, $data['BoPhan'] ?? null);
+        abort_unless($department, 422, 'Vui lòng xác định bộ phận nhận nguyên liệu.');
+
+        $rows = DB::table('PHIEU_XUAT_KHO as px')
+            ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'px.MaNV')
+            ->leftJoin('NHAN_VIEN as duyet', 'duyet.MaNV', '=', 'px.MaNVDuyet')
+            ->where('px.MaCS', $data['MaCS'])
+            ->where('px.BoPhanNhan', $department)
+            ->orderByDesc('px.MaPX')
+            ->limit(30)
+            ->get([
+                'px.MaPX', 'px.NgayXuat', 'px.TrangThai', 'px.BoPhanNhan',
+                'nv.HoTen as NguoiDeNghi', 'duyet.HoTen as NguoiXuat',
+            ]);
+
+        foreach ($rows as $row) {
+            $row->items = DB::table('CT_PHIEU_XUAT as cx')
+                ->join('NGUYEN_LIEU as nl', 'nl.MaNL', '=', 'cx.MaNL')
+                ->where('cx.MaPX', $row->MaPX)
+                ->get([
+                    'cx.MaNL', 'nl.TenNL', 'nl.DonViTinh',
+                    'cx.SoLuongDeNghi', 'cx.SoLuongXuat', 'cx.MaCTPN',
+                ]);
+        }
+        return response()->json($rows);
+    }
+
+    public function createStockRequest(Request $request)
+    {
+        $data = $request->validate([
+            'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
+            'BoPhanNhan' => ['nullable', Rule::in(['Bep', 'Bar'])],
+            'MaNV' => ['nullable', 'integer', 'exists:NHAN_VIEN,MaNV'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.MaNL' => ['required', 'integer', 'distinct', 'exists:NGUYEN_LIEU,MaNL'],
+            'items.*.SoLuongDeNghi' => ['required', 'numeric', 'gt:0'],
+        ]);
+
+        $department = $this->departmentFor($request, $data['BoPhanNhan'] ?? null);
+        abort_unless($department, 422, 'Vui lòng chọn Bếp hoặc Bar.');
+        $actor = $request->user();
+        $employeeId = (int) ($actor?->MaNV ?? $data['MaNV'] ?? 0);
+        if (!$employeeId) {
+            throw ValidationException::withMessages([
+                'MaNV' => 'Tài khoản cần được liên kết với nhân viên để lập đề nghị xuất kho.',
+            ]);
+        }
+        if ($actor?->MaNV && (int) $actor->MaNV !== $employeeId) {
+            abort(403, 'Không được lập đề nghị thay nhân viên khác.');
+        }
+        $employee = DB::table('NHAN_VIEN')->where('MaNV', $employeeId)
+            ->where('MaCS', $data['MaCS'])->where('TrangThai', 'Dang lam')->exists();
+        abort_unless($employee, 403, 'Nhân viên không thuộc cơ sở đang thao tác hoặc không còn làm việc.');
+
+        $activeIds = DB::table('NGUYEN_LIEU')
+            ->whereIn('MaNL', collect($data['items'])->pluck('MaNL'))
+            ->where('TrangThai', 'Dang su dung')
+            ->pluck('MaNL')->map(fn ($id) => (int) $id)->all();
+        foreach ($data['items'] as $index => $item) {
+            if (!in_array((int) $item['MaNL'], $activeIds, true)) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.MaNL" => 'Nguyên liệu đã ngừng sử dụng.',
+                ]);
+            }
+        }
+
+        $id = DB::transaction(function () use ($request, $data, $department, $employeeId) {
+            $issueId = DB::table('PHIEU_XUAT_KHO')->insertGetId([
+                'NgayXuat' => now(), 'BoPhanNhan' => $department,
+                'TrangThai' => 'Cho xac nhan', 'MaCS' => $data['MaCS'],
+                'MaNVDuyet' => null, 'MaNV' => $employeeId,
+            ], 'MaPX');
+
+            foreach ($data['items'] as $item) {
+                $quantity = (float) $item['SoLuongDeNghi'];
+                DB::table('CT_PHIEU_XUAT')->insert([
+                    'MaPX' => $issueId, 'MaNL' => $item['MaNL'],
+                    'MaCTPN' => null, 'SoLuongDeNghi' => $quantity,
+                    // Giá trị tạm giữ để đáp ứng CHECK > 0; không làm giảm tồn kho.
+                    'SoLuongXuat' => $quantity,
+                ]);
+            }
+
+            DB::table('NHAT_KY')->insert([
+                'ThoiGian' => now(), 'HanhDong' => 'De nghi xuat kho',
+                'DoiTuong' => 'PHIEU_XUAT_KHO',
+                'NoiDungThayDoi' => "Bộ phận {$department} lập đề nghị xuất kho #{$issueId}.",
+                'MaTK' => $request->user()?->getAuthIdentifier(),
+            ]);
+            return $issueId;
+        });
+
+        return response()->json([
+            'message' => 'Đã gửi đề nghị xuất kho. Tồn kho chỉ thay đổi khi Kho xác nhận.',
+            'MaPX' => $id,
+        ], 201);
+    }
+
     public function markNotificationRead(
         Request $request,
         int $notificationId
@@ -284,10 +406,11 @@ class BepBarController extends Controller
 
         $branch = (int) $data['MaCS'];
 
+        $query = $this->itemsQuery($branch)->where('ct.MaCTOrder', $notificationId);
+        $role = (string) ($request->user()?->TenVaiTro ?? '');
+        if (in_array($role, ['Bep', 'Bar'], true)) $query->where('dm.NoiCheBien', $role);
         abort_unless(
-            $this->itemsQuery($branch)
-                ->where('ct.MaCTOrder', $notificationId)
-                ->exists(),
+            $query->exists(),
             404,
             'Không tìm thấy thông báo ở cơ sở đang chọn.'
         );
