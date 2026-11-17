@@ -5,6 +5,8 @@ import '../styles/qntd-modules.css'
 
 const props = defineProps({ user: { type: Object, required: true } })
 const can = uc => (props.user.Quyen || []).includes('*') || (props.user.Quyen || []).includes(uc)
+const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
+const isBoard = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Ban giam doc')
 const allTabs = [
   { id: 'overview', label: 'Tổng quan tài chính', uc: 'UC7.5' },
   { id: 'vouchers', label: 'Phiếu thu / chi', uc: 'UC7.1' },
@@ -42,7 +44,7 @@ const err = e => Object.values(e?.response?.data?.errors || {}).flat().join(' ')
 const columns = computed(() => ({
   vouchers: [['MaPhieuThuChi', 'Mã phiếu'], ['Loai', 'Loại'], ['NgayLap', 'Ngày lập'], ['NoiDung', 'Nội dung'], ['SoTien', 'Số tiền'], ['NguoiLap', 'Người lập'], ['TrangThai', 'Trạng thái']],
   promotions: [['MaKM', 'Mã'], ['TenKM', 'Chương trình'], ['HinhThuc', 'Hình thức'], ['GiaTri', 'Giá trị'], ['NgayBD', 'Bắt đầu'], ['NgayKT', 'Kết thúc'], ['NganSach', 'Ngân sách'], ['TrangThai', 'Trạng thái']],
-  performance: [['MaKM', 'Mã'], ['TenKM', 'Chương trình'], ['SoHoaDon', 'Hóa đơn'], ['TongDaGiam', 'Đã giảm'], ['NganSach', 'Ngân sách']],
+  performance: [['MaKM', 'Mã'], ['TenKM', 'Chương trình'], ['SoHoaDon', 'Hóa đơn'], ['DoanhThuHoaDonApDung', 'Doanh thu hóa đơn áp dụng'], ['TongDaGiam', 'Đã giảm'], ['NganSach', 'Ngân sách']],
   budgets: [['MaKHNS', 'Mã'], ['TenKH', 'Kế hoạch'], ['KyKeHoach', 'Kỳ'], ['SoTien', 'Ngân sách'], ['TrangThai', 'Trạng thái']],
   reconciliation: [['MaBC', 'Báo cáo'], ['NgayCa', 'Ngày'], ['TenCa', 'Ca'], ['TienMat', 'Tiền mặt'], ['KhongTienMat', 'Không tiền mặt'], ['ChenhLech', 'Chênh lệch'], ['TrangThai', 'Trạng thái']],
 })[tab.value] || [])
@@ -53,16 +55,24 @@ const fields = computed(() => ({
 })[tab.value] || [])
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const needsEmployee = computed(() => ['vouchers', 'budgets'].includes(tab.value))
+const dailyRevenue = computed(() => stats.value.DoanhThuTheoNgay || [])
+const maxDailyRevenue = computed(() => Math.max(1, ...dailyRevenue.value.map(x => Number(x.DoanhThu || 0))))
 const mayCreate = computed(() => ['vouchers', 'promotions', 'budgets'].includes(tab.value))
 function format(k, v) {
-  if (['SoTien', 'TienMat', 'KhongTienMat', 'ChenhLech', 'TongDaGiam', 'NganSach'].includes(k)) return cash(v)
+  if (['SoTien', 'TienMat', 'KhongTienMat', 'ChenhLech', 'TongDaGiam', 'NganSach', 'DoanhThuHoaDonApDung'].includes(k)) return cash(v)
   if (['TrangThai', 'HinhThuc'].includes(k)) return label(v)
   return v ?? '—'
 }
 
 async function loadEmployees() {
-  // Không gọi /hr/employees ở trang Tổng quan, Marketing hay Đối soát.
   if (!needsEmployee.value || !branch.value) return
+  if (!isAdmin.value) {
+    employees.value = props.user?.MaNV
+      ? [{ MaNV: props.user.MaNV, HoTen: props.user.HoTen, MaCS: props.user.MaCS }]
+      : []
+    employee.value = String(props.user?.MaNV || '')
+    return
+  }
   try {
     const r = await api.get('/hr/employees', { params: { MaCS: branch.value, per_page: 100 } })
     employees.value = r.data?.data || []
@@ -115,7 +125,8 @@ async function selectBranch() {
 async function init() {
   try {
     const { data } = await api.get('/branches')
-    branches.value = Array.isArray(data) ? data : data?.data || []
+    const allBranches = Array.isArray(data) ? data : data?.data || []
+    branches.value = isAdmin.value ? allBranches : allBranches.filter(x => Number(x.MaCS) === Number(props.user?.MaCS))
     if (!branches.value.some(x => String(x.MaCS) === branch.value)) branch.value = String(branches.value[0]?.MaCS || '')
     // Chỉ tải một lần khi mở màn hình, không sử dụng watcher gây request lặp.
     await Promise.all([loadEmployees(), load()])
