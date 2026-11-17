@@ -44,6 +44,10 @@ class InventoryController extends Controller
 
     private function ensureEmployee(int $employeeId, ?int $branchId = null): void
     {
+        $actor = request()->user();
+        if ($actor && $actor->TenVaiTro !== 'Quan tri he thong' && (int) $actor->MaNV !== $employeeId) {
+            abort(403, 'Không được ghi nhận nghiệp vụ thay cho nhân viên khác.');
+        }
         $query = DB::table('NHAN_VIEN')
             ->where('MaNV', $employeeId)
             ->where('TrangThai', 'Dang lam');
@@ -57,6 +61,13 @@ class InventoryController extends Controller
                 'MaNV' => 'Nhân viên không tồn tại, không còn làm việc hoặc không thuộc cơ sở đã chọn.',
             ]);
         }
+    }
+
+    private function assertActorRole(array $roles): void
+    {
+        $actor = request()->user();
+        if (!$actor || $actor->TenVaiTro === 'Quan tri he thong') return;
+        abort_unless(in_array((string) $actor->TenVaiTro, $roles, true), 403, 'Vai trò hiện tại không được thực hiện nghiệp vụ này.');
     }
 
     private function stockSubquery(int $branchId, bool $availableOnly = false)
@@ -87,7 +98,7 @@ class InventoryController extends Controller
             'HanhDong' => $action,
             'DoiTuong' => $object,
             'NoiDungThayDoi' => $description,
-            'MaTK' => null,
+            'MaTK' => request()->user()?->getAuthIdentifier(),
         ]);
     }
 
@@ -471,6 +482,7 @@ class InventoryController extends Controller
 
     public function storePurchaseOrder(Request $request)
     {
+        $this->assertActorRole(['Mua hang']);
         $data = $this->validatePurchaseOrder($request);
 
         $id = DB::transaction(function () use ($data) {
@@ -500,6 +512,7 @@ class InventoryController extends Controller
 
     public function updatePurchaseOrder(Request $request, int $id)
     {
+        $this->assertActorRole(['Mua hang']);
         $data = $this->validatePurchaseOrder($request);
 
         DB::transaction(function () use ($data, $id) {
@@ -532,6 +545,7 @@ class InventoryController extends Controller
 
     public function submitPurchaseOrder(int $id)
     {
+        $this->assertActorRole(['Mua hang']);
         DB::transaction(function () use ($id) {
             $order = DB::table('DON_DAT_HANG')->where('MaPO', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Không tìm thấy đơn đặt hàng.');
@@ -558,6 +572,7 @@ class InventoryController extends Controller
 
     public function approvePurchaseOrder(Request $request, int $id)
     {
+        $this->assertActorRole(['Ban giam doc']);
         $data = $request->validate(['MaNVDuyet' => ['required', 'integer', 'exists:NHAN_VIEN,MaNV']]);
 
         DB::transaction(function () use ($id, $data) {
@@ -581,6 +596,7 @@ class InventoryController extends Controller
 
     public function rejectPurchaseOrder(Request $request, int $id)
     {
+        $this->assertActorRole(['Ban giam doc']);
         $data = $request->validate([
             'MaNVDuyet' => ['required', 'integer', 'exists:NHAN_VIEN,MaNV'],
             'LyDoTuChoi' => ['required', 'string', 'max:2000'],
@@ -607,6 +623,7 @@ class InventoryController extends Controller
 
     public function sendPurchaseOrder(int $id)
     {
+        $this->assertActorRole(['Mua hang']);
         DB::transaction(function () use ($id) {
             $order = DB::table('DON_DAT_HANG')->where('MaPO', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Không tìm thấy đơn đặt hàng.');
@@ -885,65 +902,72 @@ class InventoryController extends Controller
         $issues = $query->limit(100)->get();
         foreach ($issues as $issue) {
             $issue->items = DB::table('CT_PHIEU_XUAT as cx')
-                ->join('CT_PHIEU_NHAP as cn', 'cn.MaCTPN', '=', 'cx.MaCTPN')
-                ->join('NGUYEN_LIEU as nl', 'nl.MaNL', '=', 'cn.MaNL')
+                ->leftJoin('CT_PHIEU_NHAP as cn', 'cn.MaCTPN', '=', 'cx.MaCTPN')
+                ->join('NGUYEN_LIEU as nl', 'nl.MaNL', '=', 'cx.MaNL')
                 ->where('cx.MaPX', $issue->MaPX)
                 ->get([
-                    'cx.MaCTPX', 'cx.SoLuongXuat', 'cn.MaNL', 'nl.TenNL',
-                    'nl.DonViTinh', 'cn.DonGia', 'cn.HanSuDung',
+                    'cx.MaCTPX', 'cx.MaNL', 'cx.MaCTPN', 'cx.SoLuongDeNghi', 'cx.SoLuongXuat',
+                    'nl.TenNL', 'nl.DonViTinh', 'cn.DonGia', 'cn.HanSuDung',
                 ]);
         }
 
         return response()->json($issues);
     }
 
+    /**
+     * Legacy direct issue is intentionally disabled: Bếp/Bar must submit a request
+     * and Warehouse must confirm it through confirmIssue().
+     */
     public function storeIssue(Request $request)
     {
+        abort(410, 'Luồng xuất kho trực tiếp đã ngừng. Bếp/Bar phải lập đề nghị; Kho xác nhận đề nghị tại màn hình Xuất kho.');
+    }
+
+    public function confirmIssue(Request $request, int $id)
+    {
+        $this->assertActorRole(['Kho']);
         $data = $request->validate([
             'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
             'MaNV' => ['required', 'integer', 'exists:NHAN_VIEN,MaNV'],
-            'BoPhanNhan' => ['required', Rule::in(['Bep', 'Bar'])],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.MaNL' => ['required', 'integer', 'distinct', 'exists:NGUYEN_LIEU,MaNL'],
-            'items.*.SoLuongXuat' => ['required', 'numeric', 'gt:0'],
         ]);
-
         $this->ensureActiveBranch((int) $data['MaCS']);
         $this->ensureEmployee((int) $data['MaNV'], (int) $data['MaCS']);
 
-        $id = DB::transaction(function () use ($data) {
-            $issueId = DB::table('PHIEU_XUAT_KHO')->insertGetId([
-                'NgayXuat' => now(),
-                'BoPhanNhan' => $data['BoPhanNhan'],
-                'TrangThai' => 'Cho xac nhan',
-                'MaCS' => $data['MaCS'],
-                'MaNVDuyet' => null,
-                'MaNV' => $data['MaNV'],
-            ], 'MaPX');
+        DB::transaction(function () use ($id, $data) {
+            $issue = DB::table('PHIEU_XUAT_KHO')->where('MaPX', $id)->lockForUpdate()->first();
+            abort_unless($issue, 404, 'Không tìm thấy đề nghị xuất kho.');
+            abort_unless((int) $issue->MaCS === (int) $data['MaCS'], 403, 'Phiếu không thuộc cơ sở đang chọn.');
+            if ($issue->TrangThai !== 'Cho xac nhan') {
+                throw ValidationException::withMessages(['TrangThai' => 'Chỉ đề nghị đang chờ Kho xác nhận mới được xuất.']);
+            }
 
-            foreach ($data['items'] as $index => $item) {
-                $ingredient = DB::table('NGUYEN_LIEU')->where('MaNL', $item['MaNL'])->first();
+            $requestLines = DB::table('CT_PHIEU_XUAT')
+                ->where('MaPX', $id)->whereNull('MaCTPN')
+                ->whereNotNull('SoLuongDeNghi')->lockForUpdate()->get();
+            if ($requestLines->isEmpty()) {
+                throw ValidationException::withMessages(['items' => 'Đề nghị không có dòng nguyên liệu chờ xuất.']);
+            }
+
+            foreach ($requestLines as $requestLine) {
+                $ingredient = DB::table('NGUYEN_LIEU')->where('MaNL', $requestLine->MaNL)->first();
                 if (!$ingredient || $ingredient->TrangThai !== 'Dang su dung') {
-                    throw ValidationException::withMessages([
-                        "items.{$index}.MaNL" => 'Nguyên liệu đã ngừng sử dụng.',
-                    ]);
+                    throw ValidationException::withMessages(['items' => 'Nguyên liệu trong đề nghị đã ngừng sử dụng.']);
                 }
 
-                $remaining = (float) $item['SoLuongXuat'];
+                $remaining = (float) $requestLine->SoLuongDeNghi;
                 $lots = DB::table('CT_PHIEU_NHAP as ct')
                     ->join('PHIEU_NHAP_KHO as pn', 'pn.MaPN', '=', 'ct.MaPN')
-                    ->where('pn.MaCS', $data['MaCS'])
+                    ->where('pn.MaCS', $issue->MaCS)
                     ->where('pn.TrangThai', 'Da xac nhan')
-                    ->where('ct.MaNL', $item['MaNL'])
+                    ->where('ct.MaNL', $requestLine->MaNL)
                     ->where('ct.SoLuongCon', '>', 0)
                     ->where(function ($q) {
                         $q->whereNull('ct.HanSuDung')
                             ->orWhereDate('ct.HanSuDung', '>=', now()->toDateString());
                     })
-                    ->orderByRaw('DATE(pn.NgayNhap) ASC')
+                    ->orderBy('pn.NgayNhap')
                     ->orderByRaw('CASE WHEN ct.HanSuDung IS NULL THEN 1 ELSE 0 END')
                     ->orderBy('ct.HanSuDung')
-                    ->orderBy('pn.NgayNhap')
                     ->orderBy('ct.MaCTPN')
                     ->lockForUpdate()
                     ->get(['ct.MaCTPN', 'ct.SoLuongCon']);
@@ -951,40 +975,45 @@ class InventoryController extends Controller
                 $available = (float) $lots->sum('SoLuongCon');
                 if ($available + 0.0001 < $remaining) {
                     throw ValidationException::withMessages([
-                        "items.{$index}.SoLuongXuat" => "Không đủ tồn khả dụng cho {$ingredient->TenNL}. Còn {$available} {$ingredient->DonViTinh}.",
+                        'items' => "Không đủ tồn khả dụng cho {$ingredient->TenNL}. Còn {$available} {$ingredient->DonViTinh}; cần {$remaining}.",
                     ]);
                 }
 
+                $firstLot = true;
                 foreach ($lots as $lot) {
                     if ($remaining <= 0.0001) break;
                     $take = min($remaining, (float) $lot->SoLuongCon);
+                    DB::table('CT_PHIEU_NHAP')->where('MaCTPN', $lot->MaCTPN)
+                        ->update(['SoLuongCon' => (float) $lot->SoLuongCon - $take]);
 
-                    DB::table('CT_PHIEU_NHAP')->where('MaCTPN', $lot->MaCTPN)->update([
-                        'SoLuongCon' => (float) $lot->SoLuongCon - $take,
-                    ]);
-                    DB::table('CT_PHIEU_XUAT')->insert([
-                        'MaPX' => $issueId,
-                        'MaCTPN' => $lot->MaCTPN,
-                        'SoLuongXuat' => $take,
-                    ]);
-
+                    if ($firstLot) {
+                        DB::table('CT_PHIEU_XUAT')->where('MaCTPX', $requestLine->MaCTPX)->update([
+                            'MaCTPN' => $lot->MaCTPN,
+                            'SoLuongXuat' => $take,
+                        ]);
+                        $firstLot = false;
+                    } else {
+                        DB::table('CT_PHIEU_XUAT')->insert([
+                            'MaPX' => $id,
+                            'MaNL' => $requestLine->MaNL,
+                            'MaCTPN' => $lot->MaCTPN,
+                            'SoLuongDeNghi' => null,
+                            'SoLuongXuat' => $take,
+                        ]);
+                    }
                     $remaining -= $take;
                 }
             }
 
-            DB::table('PHIEU_XUAT_KHO')->where('MaPX', $issueId)->update([
+            DB::table('PHIEU_XUAT_KHO')->where('MaPX', $id)->update([
                 'TrangThai' => 'Da xuat',
                 'MaNVDuyet' => $data['MaNV'],
             ]);
-
-            $this->logAction('Xuat kho FIFO', 'PHIEU_XUAT_KHO', "Tạo và xác nhận phiếu xuất #{$issueId} cho bộ phận {$data['BoPhanNhan']}.");
-            return $issueId;
+            $this->logAction('Xac nhan xuat kho FIFO', 'PHIEU_XUAT_KHO',
+                "Kho xác nhận đề nghị #{$id} của bộ phận {$issue->BoPhanNhan}.");
         }, attempts: 3);
 
-        return response()->json([
-            'message' => 'Đã xuất kho theo FIFO và cập nhật số lượng từng lô.',
-            'MaPX' => $id,
-        ], 201);
+        return response()->json(['message' => 'Đã xác nhận đề nghị và xuất kho theo FIFO.']);
     }
 
     public function stock(Request $request)
