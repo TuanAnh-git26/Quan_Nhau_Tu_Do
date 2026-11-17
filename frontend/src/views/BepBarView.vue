@@ -476,7 +476,7 @@ onUnmounted(() => {
           <div class="notification-copy">
             <strong>{{ request.TrangThai === 'Cho xac nhan' ? 'Đang chờ Kho xác nhận' : request.TrangThai === 'Da xuat' ? 'Kho đã xuất nguyên liệu' : 'Đã hủy' }}</strong>
             <small>{{ dateText(request.NgayXuat) }} · Người đề nghị: {{ request.NguoiDeNghi || '—' }} · Người xuất: {{ request.NguoiXuat || '—' }}</small>
-            <small v-for="(item, index) in request.items || []" :key="index">{{ item.TenNL }}: đề nghị {{ Number(item.SoLuongDeNghi || 0).toLocaleString('vi-VN') }} {{ item.DonViTinh }} · xuất {{ Number(item.SoLuongXuat || 0).toLocaleString('vi-VN') }} {{ item.DonViTinh }}</small>
+            <small v-for="(item, index) in request.items || []" :key="index">{{ item.TenNL }}: đề nghị {{ Number(item.SoLuongDeNghi || 0).toLocaleString('vi-VN') }} {{ item.DonViTinh }} · xuất {{ request.TrangThai === 'Cho xac nhan' ? 'chưa xuất' : Number(item.SoLuongXuat || 0).toLocaleString('vi-VN') + ' ' + item.DonViTinh }}</small>
           </div>
         </article>
         <div v-if="!stockRequests.length" class="notifications-empty">Chưa có đề nghị xuất kho nào cho bộ phận này.</div>

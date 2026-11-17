@@ -755,7 +755,7 @@ async function saveRecipe() {
             <td>{{ dateTime(item.NgayXuat) }}</td>
             <td>{{ item.BoPhanNhan === 'Bep' ? 'Bếp' : 'Bar' }}</td>
             <td>{{ item.NguoiLap }}</td>
-            <td><div v-for="(line,index) in item.items || []" :key="index" class="text-xs">{{ line.TenNL }} · đề nghị {{ quantity(line.SoLuongDeNghi) }} {{ line.DonViTinh }} · xuất {{ quantity(line.SoLuongXuat) }}</div></td>
+            <td><div v-for="(line,index) in item.items || []" :key="index" class="text-xs">{{ line.TenNL }} · đề nghị {{ quantity(line.SoLuongDeNghi) }} {{ line.DonViTinh }} · xuất {{ item.TrangThai === 'Cho xac nhan' ? 'chưa xuất' : quantity(line.SoLuongXuat) + ' ' + line.DonViTinh }}</div></td>
             <td><span :class="statusClass(item.TrangThai)">{{ docStatus(item.TrangThai) }}</span></td>
             <td><button v-if="isWarehouse && item.TrangThai === 'Cho xac nhan'" class="text-btn" :disabled="saving" @click="confirmIssue(item)">Xác nhận xuất FIFO</button></td>
           </tr>
