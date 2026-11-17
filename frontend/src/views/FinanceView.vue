@@ -187,16 +187,52 @@ onMounted(init)
     </div>
     <section class="rounded-xl border bg-white p-4">
       <div class="mb-4 flex flex-wrap items-end gap-3">
-        <label class="min-w-48 flex-1 text-xs font-semibold">Cơ sở<select v-model="branch" class="mt-1 w-full rounded-lg border p-2" @change="selectBranch"><option v-for="b in branches" :key="b.MaCS" :value="String(b.MaCS)">{{ b.TenCS }}</option></select></label>
-        <label v-if="needsEmployee" class="min-w-48 flex-1 text-xs font-semibold">Nhân viên thực hiện<select v-model="employee" class="mt-1 w-full rounded-lg border p-2"><option v-for="v in employees" :key="v.MaNV" :value="String(v.MaNV)">{{ v.HoTen }}</option></select></label>
+        <label class="min-w-48 flex-1 text-xs font-semibold">Cơ sở<select v-model="branch" :disabled="!isAdmin" class="mt-1 w-full rounded-lg border p-2" @change="selectBranch"><option v-for="b in branches" :key="b.MaCS" :value="String(b.MaCS)">{{ b.TenCS }}</option></select></label>
+        <label v-if="needsEmployee && isAdmin" class="min-w-48 flex-1 text-xs font-semibold">Nhân viên thực hiện<select v-model="employee" class="mt-1 w-full rounded-lg border p-2"><option v-for="v in employees" :key="v.MaNV" :value="String(v.MaNV)">{{ v.HoTen }}</option></select></label>
+        <div v-else-if="needsEmployee" class="min-w-48 flex-1 text-xs font-semibold">Nhân viên thực hiện<p class="mt-1 rounded-lg border bg-slate-50 p-2">{{ props.user?.HoTen || 'Chưa gán nhân viên' }}</p></div>
         <label v-if="['overview', 'vouchers', 'reconciliation'].includes(tab)" class="text-xs font-semibold">Từ ngày<input v-model="from" type="date" class="mt-1 rounded-lg border p-2" /></label>
         <label v-if="['overview', 'vouchers', 'reconciliation'].includes(tab)" class="text-xs font-semibold">Đến ngày<input v-model="to" type="date" class="mt-1 rounded-lg border p-2" /></label>
         <button class="rounded-lg border px-3 py-2 text-sm" @click="page = 1; load()">Lọc</button>
         <button v-if="mayCreate" class="rounded-lg bg-slate-800 px-3 py-2 text-sm text-white" @click="open()">+ Tạo mới</button>
       </div>
-      <div v-if="tab === 'overview'" class="grid gap-3 md:grid-cols-3">
-        <div v-for="[key, title] in [['DoanhThuThanhToan', 'Doanh thu đã thu'], ['ThuKhac', 'Thu khác đã duyệt'], ['ChiKhac', 'Chi khác đã duyệt'], ['TongThu', 'Tổng thu'], ['ChenhLechThuChi', 'Chênh lệch thu – chi'], ['GiaoDichThanhCong', 'Giao dịch thành công']]" :key="key" class="rounded-xl bg-slate-50 p-5"><p class="text-sm text-slate-500">{{ title }}</p><strong class="mt-2 block text-2xl">{{ key === 'GiaoDichThanhCong' ? stats[key] || 0 : cash(stats[key]) }}</strong></div>
-        <p class="text-xs text-slate-500 md:col-span-3">Chênh lệch thu – chi chưa phải lợi nhuận vì chưa trừ đầy đủ giá vốn và chi phí vận hành.</p>
+      <div v-if="tab === 'overview'" class="space-y-5">
+        <div class="grid gap-3 md:grid-cols-3">
+          <div v-for="[key, title] in [['DoanhThuThanhToan', 'Doanh thu đã thu'], ['ThuKhac', 'Thu khác đã duyệt'], ['ChiKhac', 'Chi phí qua phiếu chi đã duyệt'], ['TongThu', 'Tổng thu'], ['ChenhLechThuChi', 'Chênh lệch thu – chi'], ['GiaoDichThanhCong', 'Giao dịch thành công'], ['GiaTriTonKho', 'Giá trị tồn kho hiện tại'], ['POChoDuyet', 'PO chờ duyệt'], ['KeHoachChoDuyet', 'Kế hoạch ngân sách chờ duyệt']]" :key="key" class="rounded-xl bg-slate-50 p-5">
+            <p class="text-sm text-slate-500">{{ title }}</p>
+            <strong class="mt-2 block text-2xl">{{ ['GiaoDichThanhCong','POChoDuyet','KeHoachChoDuyet'].includes(key) ? (stats[key] || 0) : cash(stats[key]) }}</strong>
+          </div>
+          <p class="text-xs text-slate-500 md:col-span-3">Chênh lệch thu – chi chưa phải lợi nhuận vì chưa trừ đầy đủ giá vốn, lương và chi phí vận hành. Giá trị tồn kho tính theo số lượng còn lại của các lô nhập đã xác nhận.</p>
+        </div>
+
+        <section class="rounded-xl border p-4">
+          <h3 class="font-bold">Doanh thu theo ngày</h3>
+          <p class="mt-1 text-xs text-slate-500">Tổng giao dịch thanh toán thành công trong khoảng thời gian đã chọn</p>
+          <div v-if="dailyRevenue.length" class="mt-4 flex min-h-48 items-end gap-2 overflow-x-auto border-b border-slate-200 pb-2">
+            <div v-for="day in dailyRevenue" :key="day.Ngay" class="flex min-w-12 flex-1 flex-col items-center justify-end gap-2">
+              <span class="text-[10px] text-slate-500">{{ cash(day.DoanhThu) }}</span>
+              <div class="w-full max-w-12 rounded-t bg-emerald-600" :style="{ height: Math.max(8, Number(day.DoanhThu || 0) / maxDailyRevenue * 130) + 'px' }"></div>
+              <span class="text-[10px] text-slate-500">{{ String(day.Ngay).slice(5) }}</span>
+            </div>
+          </div>
+          <p v-else class="mt-4 text-sm text-slate-500">Chưa có giao dịch thành công trong khoảng thời gian này.</p>
+        </section>
+
+        <section v-if="isBoard" class="grid gap-4 lg:grid-cols-2">
+          <div class="rounded-xl border p-4">
+            <h3 class="font-bold">Đơn mua hàng chờ Ban Giám đốc duyệt</h3>
+            <div v-for="po in stats.POC anDuyet || stats.POCanDuyet || []" :key="po.MaPO" class="flex justify-between gap-3 border-b py-2 text-sm">
+              <span>PO #{{ po.MaPO }} · {{ po.TenNCC }} · {{ po.NguoiLap }}</span><button class="text-xs font-semibold text-amber-700" @click="selectTab('budgets')">Mở phân hệ →</button>
+            </div>
+            <p v-if="!(stats.POCanDuyet || []).length" class="pt-3 text-sm text-slate-500">Không có PO chờ duyệt.</p>
+          </div>
+          <div class="rounded-xl border p-4">
+            <h3 class="font-bold">Kế hoạch ngân sách chờ duyệt</h3>
+            <div v-for="budget in stats.KeHoachCanDuyet || []" :key="budget.MaKHNS" class="flex justify-between gap-3 border-b py-2 text-sm">
+              <span>{{ budget.TenKH }} · {{ budget.KyKeHoach }} · {{ cash(budget.SoTien) }}</span><button class="text-xs font-semibold text-amber-700" @click="selectTab('budgets')">Mở duyệt →</button>
+            </div>
+            <p v-if="!(stats.KeHoachCanDuyet || []).length" class="pt-3 text-sm text-slate-500">Không có kế hoạch chờ duyệt.</p>
+          </div>
+        </section>
       </div>
       <template v-else>
         <div class="overflow-x-auto"><table class="w-full min-w-[800px] text-left text-xs"><thead class="bg-slate-50"><tr><th v-for="[key, name] in columns" :key="key" class="p-3">{{ name }}</th><th class="p-3">Thao tác</th></tr></thead>
