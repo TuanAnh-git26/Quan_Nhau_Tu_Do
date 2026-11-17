@@ -28,7 +28,6 @@ class BepBarController extends Controller
             ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'po.MaNV')
             ->where('kv.MaCS', $branchId)
             ->whereIn('po.TrangThai', ['Da gui', 'Dang thanh toan'])
-            ->whereNotNull('ct.ThoiGianNhan')
             ->where('ct.TrangThaiMon', '<>', 'Da huy')
             ->select([
                 'ct.MaCTOrder', 'ct.MaOrder', 'ct.MaMon', 'ct.SoLuong',
@@ -179,12 +178,6 @@ class BepBarController extends Controller
                 ]);
             }
 
-            if (!$line->ThoiGianNhan) {
-                throw ValidationException::withMessages([
-                    'TrangThaiMon' => 'Món chưa được gửi đến Bếp/Bar.',
-                ]);
-            }
-
             if (
                 isset($data['TrangThaiHienTai']) &&
                 $line->TrangThaiMon !== $data['TrangThaiHienTai']
@@ -225,6 +218,14 @@ class BepBarController extends Controller
                 ->where('TrangThaiMon', $line->TrangThaiMon)
                 ->update($update);
 
+            DB::table('NHAT_KY')->insert([
+                'ThoiGian' => now(),
+                'HanhDong' => 'Cap nhat trang thai mon',
+                'DoiTuong' => 'CHI_TIET_ORDER',
+                'NoiDungThayDoi' => "Món #{$detailId}: {$line->TrangThaiMon} -> {$data['TrangThaiMon']}.",
+                'MaTK' => request()->user()?->getAuthIdentifier(),
+            ]);
+
             return DB::table('CHI_TIET_ORDER')
                 ->where('MaCTOrder', $detailId)
                 ->first();
@@ -246,14 +247,15 @@ class BepBarController extends Controller
         $read = Cache::store('file')->get('bepbar_read_' . $branch, []);
 
         $rows = $this->itemsQuery($branch)
-            ->where('ct.ThoiGianNhan', '>=', now()->subHours(24))
-            ->orderByDesc('ct.ThoiGianNhan')
+            ->whereNotNull('ct.ThoiGianHoanTat')
+            ->where('ct.ThoiGianHoanTat', '>=', now()->subHours(24))
+            ->orderByDesc('ct.ThoiGianHoanTat')
             ->limit(30)
             ->get();
 
         foreach ($rows as $row) {
             $row->MaTB = $row->MaCTOrder;
-            $row->ThoiGianTao = $row->ThoiGianNhan;
+            $row->ThoiGianTao = $row->ThoiGianHoanTat;
             $row->NhanVienNhan = $row->NhanVienPhuTrach;
 
             $row->NoiDung =
