@@ -407,12 +407,13 @@ class OrderController extends Controller
                 'TrangThai' => 'Da gui',
             ]);
             $sentLines = DB::table('CHI_TIET_ORDER')->where('MaOrder', $id)
-                ->whereNull('ThoiGianNhan')->where('TrangThaiMon', '<>', 'Da huy')
-                ->update(['ThoiGianNhan' => now()]);
+                ->where('TrangThaiMon', '<>', 'Da huy')
+                ->count();
 
+            // Chỉ ghi ThoiGianNhan khi nhân viên Bếp/Bar thực sự bấm "Đã nhận".
             $this->writeLog('Gui order', 'PHIEU_ORDER',
                 "Order #{$id}, bàn #{$order->MaBan}; " .
-                "{$order->TrangThai} -> Da gui; {$sentLines} dòng món mới gửi Bếp/Bar.");
+                "{$order->TrangThai} -> Da gui; {$sentLines} dòng món được chuyển tới Bếp/Bar.");
         });
 
         return response()->json(['message' => 'Đã gửi order đến Bếp/Bar.']);
