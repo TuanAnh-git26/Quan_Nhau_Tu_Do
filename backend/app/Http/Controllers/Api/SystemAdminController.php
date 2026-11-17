@@ -197,10 +197,19 @@ class SystemAdminController extends Controller
     public function tickets(Request $request)
     {
         $data = $request->validate(['MaCS' => ['nullable', 'integer', 'exists:CO_SO,MaCS']]);
-        $query = DB::table('TICKET_HO_TRO')->orderByDesc('MaTicket');
-        if (!empty($data['MaCS'])) $query->where('MaCS', $data['MaCS']);
+        $query = DB::table('TICKET_HO_TRO as t')
+            ->leftJoin('TAI_KHOAN as tk', 'tk.MaTK', '=', 't.MaTKGui')
+            ->leftJoin('NHAN_VIEN as nv', 'nv.MaNV', '=', 't.MaNVXuLy')
+            ->select('t.*', 'tk.TenDangNhap as NguoiGui', 'nv.HoTen as NguoiXuLy')
+            ->orderByDesc('t.MaTicket');
+
+        if (!empty($data['MaCS'])) $query->where('t.MaCS', $data['MaCS']);
         if ($request->user()->TenVaiTro !== 'Quan tri he thong') {
-            $query->where('MaCS', (int) $request->session()->get('qntd_branch_id'));
+            $query->where('t.MaCS', (int) $request->session()->get('qntd_branch_id'));
+            // Nhân viên chỉ xem ticket do chính tài khoản của mình gửi; IT xem toàn bộ ticket trong phạm vi.
+            if ($request->user()->TenVaiTro !== 'IT') {
+                $query->where('t.MaTKGui', $request->user()->getAuthIdentifier());
+            }
         }
         return response()->json($query->paginate(15));
     }
@@ -226,6 +235,7 @@ class SystemAdminController extends Controller
 
     public function updateTicket(Request $request, int $id)
     {
+        abort_unless(in_array($request->user()->TenVaiTro, ['IT', 'Quan tri he thong'], true), 403, 'Chỉ bộ phận IT được cập nhật và xử lý ticket.');
         $data = $request->validate([
             'TrangThai' => ['required', Rule::in(['Moi', 'Dang xu ly', 'Cho phan hoi', 'Da dong'])],
             'MaNVXuLy' => ['nullable', 'integer', 'exists:NHAN_VIEN,MaNV'],
