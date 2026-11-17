@@ -262,7 +262,7 @@ onMounted(async () => { await base(); await load() })
     <div v-if="error" class="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{{ error }}</div>
     <div v-if="success" class="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{{ success }}</div>
     <p v-for="warning in payrollWarnings" :key="warning" class="rounded-lg bg-amber-50 p-3 text-xs text-amber-700">{{ warning }}</p>
-    <div class="grid gap-3 md:grid-cols-4">
+    <div v-if="can('UC6.1') || can('UC6.2') || can('UC6.4')" class="grid gap-3 md:grid-cols-4">
       <div v-for="[key,label] in [['TongNhanVien','Tổng nhân viên'], ['DangLam','Đang làm'], ['DaCheckIn','Đã check-in hôm nay'], ['BangLuongChoKeToan','Lương chờ kế toán']]" :key="key" class="rounded-xl border bg-white p-4">
         <p class="text-sm text-slate-500">{{ label }}</p><strong class="mt-1 block text-2xl">{{ dashboard[key] ?? '—' }}</strong>
       </div>
@@ -277,27 +277,27 @@ onMounted(async () => { await base(); await load() })
       </div>
       <div class="mb-4 flex flex-wrap items-end gap-3">
         <label v-if="tab!=='positions'" class="min-w-48 flex-1 text-xs font-semibold">Cơ sở
-          <select v-model="branch" class="mt-1 w-full rounded-lg border p-2"><option value="">Toàn hệ thống</option><option v-for="b in branches" :key="b.MaCS" :value="String(b.MaCS)">{{ b.TenCS }}</option></select>
+          <select v-model="branch" :disabled="!isAdmin" class="mt-1 w-full rounded-lg border p-2"><option v-if="isAdmin" value="">Toàn hệ thống</option><option v-for="b in branches" :key="b.MaCS" :value="String(b.MaCS)">{{ b.TenCS }}</option></select>
         </label>
         <label v-if="['employees','contracts','payrolls'].includes(tab)" class="min-w-44 flex-1 text-xs font-semibold">Tìm kiếm
           <input v-model="q" @keyup.enter="page=1;load()" class="mt-1 w-full rounded-lg border p-2" placeholder="Tên hoặc mã..." />
         </label>
         <label v-if="tab==='payrolls'" class="text-xs font-semibold">Kỳ lương<input v-model="month" type="month" class="mt-1 rounded-lg border p-2" /></label>
         <button class="rounded-lg border px-4 py-2 text-sm" @click="page=1;load()">Lọc</button>
-        <button v-if="tab==='payrolls'" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white" @click="generatePayroll">Tính bảng lương</button>
-        <button v-else class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white" @click="open()">+ Thêm mới</button>
+        <button v-if="tab==='payrolls' && isHR" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white" @click="generatePayroll">Tính bảng lương</button>
+        <button v-else-if="tab!=='payrolls' && (isHR || (isSupervisor && tab==='attendance'))" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white" @click="open()">+ Thêm mới</button>
       </div>
       <div class="overflow-x-auto"><table class="w-full min-w-[820px] border-collapse text-left text-xs">
         <thead class="bg-slate-50"><tr><th v-for="[key,label] in columns" :key="key" class="p-3">{{ label }}</th><th class="p-3">Thao tác</th></tr></thead>
         <tbody><tr v-for="row in rows" :key="JSON.stringify(row)" class="border-t"><td v-for="[key] in columns" :key="key" class="p-3">{{ cellText(key,row) }}</td>
           <td class="min-w-[175px] p-3"><div class="flex flex-wrap gap-1">
-            <button v-if="tab!=='payrolls'" class="rounded border px-2 py-1" @click="open(row)">Sửa</button>
+            <button v-if="tab!=='payrolls' && (isHR || (isSupervisor && tab==='attendance'))" class="rounded border px-2 py-1" @click="open(row)">Sửa</button>
             <button v-if="tab==='employees'" class="rounded border px-2 py-1" @click="action(row,'status')">Trạng thái</button>
             <button v-if="tab==='positions'" class="rounded border px-2 py-1 text-rose-600" @click="action(row,'delete')">Xóa</button>
             <button v-if="tab==='contracts' && row.TrangThai==='Hieu luc'" class="rounded border px-2 py-1" @click="action(row,'end')">Kết thúc</button>
-            <button v-if="tab==='shifts'" class="rounded border px-2 py-1" @click="action(row,'disable')">Ngừng ca</button>
+            <button v-if="tab==='shifts' && isHR" class="rounded border px-2 py-1" @click="action(row,'disable')">Ngừng ca</button>
             <template v-if="tab==='attendance'"><button v-if="!row.GioVao && !row.LoaiNghi" class="rounded border px-2 py-1" @click="action(row,'in')">Vào ca</button><button v-if="row.GioVao && !row.GioRa" class="rounded border px-2 py-1" @click="action(row,'out')">Ra ca</button></template>
-            <template v-if="tab==='payrolls'"><button v-if="['Nhap','Can dieu chinh'].includes(row.TrangThai)" class="rounded border px-2 py-1" @click="open(row)">Sửa tiền</button><button v-if="['Nhap','Can dieu chinh'].includes(row.TrangThai)" class="rounded border px-2 py-1" @click="action(row,'submit')">Trình</button><button v-if="row.TrangThai==='Cho ke toan'" class="rounded border px-2 py-1" @click="action(row,'return')">Trả lại</button><button v-if="row.TrangThai==='Cho ke toan'" class="rounded border px-2 py-1" @click="action(row,'approve')">Chốt</button></template>
+            <template v-if="tab==='payrolls'"><button v-if="isHR && ['Nhap','Can dieu chinh'].includes(row.TrangThai)" class="rounded border px-2 py-1" @click="open(row)">Sửa tiền</button><button v-if="isHR && ['Nhap','Can dieu chinh'].includes(row.TrangThai)" class="rounded border px-2 py-1" @click="action(row,'submit')">Trình</button><button v-if="isAccountant && row.TrangThai==='Cho ke toan'" class="rounded border px-2 py-1" @click="action(row,'return')">Trả lại</button><button v-if="isAccountant && row.TrangThai==='Cho ke toan'" class="rounded border px-2 py-1" @click="action(row,'approve')">Chốt</button></template>
           </div></td>
         </tr><tr v-if="!rows.length"><td :colspan="columns.length+1" class="p-8 text-center text-slate-500">{{ busy ? 'Đang tải...' : 'Không có dữ liệu.' }}</td></tr></tbody>
       </table></div>
