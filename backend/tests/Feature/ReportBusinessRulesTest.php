@@ -102,6 +102,10 @@ class ReportBusinessRulesTest extends TestCase
         // AuthenticateSession không hiểu nhầm đây là phiên bị đổi mật khẩu.
         $this->flushSession();
 
+        // Sanctum guard có thể giữ user đã resolve từ request trước trong cùng test.
+        // Xóa cache guard để request kế tiếp resolve lại đúng tài khoản vừa actingAs.
+        $this->app['auth']->forgetGuards();
+
         $this->actingAs($identity['user'], 'web');
         $this->withSession([
             'qntd_branch_id' => $branch,
@@ -301,7 +305,7 @@ class ReportBusinessRulesTest extends TestCase
         $supervisor = $this->identity($branch, ['UC2.5'], 'Giam sat');
         $this->signIn($supervisor, $branch);
         $url = "/api/complaints/{$complaintId}";
-        $this->putJson($url, ['TrangThai' => 'Da dong'])->dump()->assertUnprocessable();
+        $this->putJson($url, ['TrangThai' => 'Da dong'])->assertUnprocessable();
         $this->putJson($url, [
             'TrangThai' => 'Dang xu ly', 'HuongXuLy' => 'Đã trao đổi với khách',
         ])->assertOk();
@@ -328,6 +332,6 @@ class ReportBusinessRulesTest extends TestCase
         $this->getJson('/api/hr/payrolls?MaCS=' . $branch)->assertForbidden();
         $finance = $this->identity($branch, ['UC6.4'], 'Only UC6.4 ' . Str::random(8));
         $this->signIn($finance, $branch);
-        $this->getJson('/api/hr/payrolls?MaCS=' . $branch)->dump()->assertOk();
+        $this->getJson('/api/hr/payrolls?MaCS=' . $branch)->assertOk();
     }
 }
