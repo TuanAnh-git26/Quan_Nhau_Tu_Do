@@ -841,6 +841,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($id) {
             $receipt = DB::table('PHIEU_NHAP_KHO')->where('MaPN', $id)->lockForUpdate()->first();
             abort_unless($receipt, 404, 'Không tìm thấy phiếu nhập.');
+            $this->assertBranchAccess((int) $receipt->MaCS);
 
             if ($receipt->TrangThai !== 'Nhap nhap') {
                 throw ValidationException::withMessages(['TrangThai' => 'Phiếu nhập không ở trạng thái Nháp.']);
@@ -894,6 +895,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($id) {
             $receipt = DB::table('PHIEU_NHAP_KHO')->where('MaPN', $id)->lockForUpdate()->first();
             abort_unless($receipt, 404, 'Không tìm thấy phiếu nhập.');
+            $this->assertBranchAccess((int) $receipt->MaCS);
             if ($receipt->TrangThai !== 'Nhap nhap') {
                 throw ValidationException::withMessages(['TrangThai' => 'Chỉ được hủy phiếu nhập đang ở trạng thái Nháp.']);
             }
@@ -1122,6 +1124,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($id) {
             $count = DB::table('PHIEU_KIEM_KE')->where('MaKK', $id)->lockForUpdate()->first();
             abort_unless($count, 404, 'Không tìm thấy phiếu kiểm kê.');
+            $this->assertBranchAccess((int) $count->MaCS);
             if ($count->TrangThai !== 'Nhap') {
                 throw ValidationException::withMessages(['TrangThai' => 'Phiếu kiểm kê không ở trạng thái Nháp.']);
             }
