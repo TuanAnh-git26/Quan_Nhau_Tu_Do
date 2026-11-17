@@ -1,12 +1,12 @@
 <?php
 
-namespace App\\Http\\Middleware;
+namespace App\Http\Middleware;
 
 use Closure;
-use Illuminate\\Http\\Request;
-use Illuminate\\Support\\Facades\\DB;
-use Illuminate\\Support\\Facades\\Auth;
-use Symfony\\Component\\HttpFoundation\\Response;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Cô lập dữ liệu theo MaCS cho tài khoản nhân viên.
@@ -87,64 +87,64 @@ class EnsureBranchScope
         $id = null;
         $resource = null;
 
-        if (preg_match('~^api/areas/(\\d+)(?:/|$)~', $path, $m)) {
+        if (preg_match('~^api/areas/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'area';
-        } elseif (preg_match('~^api/tables/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/tables/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'table';
-        } elseif (preg_match('~^api/reservations/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/reservations/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'reservation';
-        } elseif (preg_match('~^api/orders/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/orders/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'order';
-        } elseif (preg_match('~^api/bep-bar/items/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/bep-bar/items/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'order-line';
-        } elseif (preg_match('~^api/cashier/invoices/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/cashier/invoices/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'invoice';
-        } elseif (preg_match('~^api/cashier/payments/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/cashier/payments/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'payment';
-        } elseif (preg_match('~^api/cashier/shift-reports/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/cashier/shift-reports/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'shift-report';
-        } elseif (preg_match('~^api/inventory/purchase-orders/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/inventory/purchase-orders/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'purchase-order';
-        } elseif (preg_match('~^api/inventory/receipts/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/inventory/receipts/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'receipt';
-        } elseif (preg_match('~^api/inventory/issues/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/inventory/issues/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'issue';
-        } elseif (preg_match('~^api/inventory/stocktakes/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/inventory/stocktakes/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'stocktake';
-        } elseif (preg_match('~^api/finance/vouchers/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/finance/vouchers/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'voucher';
-        } elseif (preg_match('~^api/finance/budgets/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/finance/budgets/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'budget';
-        } elseif (preg_match('~^api/hr/employees/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/hr/employees/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'employee';
-        } elseif (preg_match('~^api/hr/contracts/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/hr/contracts/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'contract';
-        } elseif (preg_match('~^api/hr/attendance/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/hr/attendance/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'attendance';
-        } elseif (preg_match('~^api/hr/payrolls/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/hr/payrolls/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'payroll';
-        } elseif (preg_match('~^api/hr/shifts/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/hr/shifts/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'shift';
-        } elseif (preg_match('~^api/system/tickets/(\\d+)(?:/|$)~', $path, $m)) {
+        } elseif (preg_match('~^api/system/tickets/(\d+)(?:/|$)~', $path, $m)) {
             $id = (int) $m[1];
             $resource = 'ticket';
         }
