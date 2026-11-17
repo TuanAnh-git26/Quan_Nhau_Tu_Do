@@ -119,6 +119,8 @@ Route::put('/complaints/{id}', [ComplaintController::class, 'update'])->middlewa
 // ==========================================
 
 Route::get('/bep-bar/orders', [BepBarController::class, 'index'])->middleware('uc:UC3.1,UC3.2');
+Route::get('/bep-bar/stock-requests', [BepBarController::class, 'stockRequests'])->middleware('uc:UC3.3');
+Route::post('/bep-bar/stock-requests', [BepBarController::class, 'createStockRequest'])->middleware('uc:UC3.3');
 
 Route::patch(
     '/bep-bar/items/{detailId}/status',
@@ -137,10 +139,10 @@ Route::put(
 // ĐỢT 4: KHO - NGUYÊN LIỆU - MUA HÀNG
 // ==========================================
 
-Route::get('/inventory/dashboard', [InventoryController::class, 'dashboard'])->middleware('uc:UC4.1');
-Route::get('/inventory/stock', [InventoryController::class, 'stock'])->middleware('uc:UC4.1');
+Route::get('/inventory/dashboard', [InventoryController::class, 'dashboard'])->middleware('uc:UC4.1,UC4.7');
+Route::get('/inventory/stock', [InventoryController::class, 'stock'])->middleware('uc:UC4.1,UC4.7');
 
-Route::get('/ingredients', [InventoryController::class, 'ingredients'])->middleware('uc:UC4.1');
+Route::get('/ingredients', [InventoryController::class, 'ingredients'])->middleware('uc:UC4.1,UC3.3,UC4.5,UC4.7');
 Route::post('/ingredients', [InventoryController::class, 'storeIngredient'])->middleware('uc:UC4.1');
 Route::put('/ingredients/{id}', [InventoryController::class, 'updateIngredient'])->middleware('uc:UC4.1');
 Route::delete('/ingredients/{id}', [InventoryController::class, 'disableIngredient'])->middleware('uc:UC4.1');
@@ -189,7 +191,7 @@ Route::post(
 )->middleware('uc:UC4.2');
 
 Route::get('/inventory/issues', [InventoryController::class, 'issues'])->middleware('uc:UC4.3');
-Route::post('/inventory/issues', [InventoryController::class, 'storeIssue'])->middleware('uc:UC4.3');
+Route::post('/inventory/issues/{id}/confirm', [InventoryController::class, 'confirmIssue'])->middleware('uc:UC4.3');
 
 Route::get('/inventory/stocktakes', [InventoryController::class, 'stocktakes'])->middleware('uc:UC4.4');
 Route::post('/inventory/stocktakes', [InventoryController::class, 'storeStocktake'])->middleware('uc:UC4.4');
@@ -314,7 +316,7 @@ Route::prefix('hr')->group(function () {
     )->middleware('uc:UC6.1');
 
     // Ca làm.
-    Route::get('/shifts', [HumanResourcesController::class, 'shifts'])->middleware('uc:UC6.2');
+    Route::get('/shifts', [HumanResourcesController::class, 'shifts'])->middleware('uc:UC6.2,UC6.3');
     Route::post('/shifts', [HumanResourcesController::class, 'storeShift'])->middleware('uc:UC6.2');
     Route::put('/shifts/{id}', [HumanResourcesController::class, 'updateShift'])->middleware('uc:UC6.2');
 
@@ -324,7 +326,7 @@ Route::prefix('hr')->group(function () {
     )->middleware('uc:UC6.2');
 
     // Xếp ca / chấm công.
-    Route::get('/attendance', [HumanResourcesController::class, 'attendance'])->middleware('uc:UC6.2,UC6.3');
+    Route::get('/attendance', [HumanResourcesController::class, 'attendance'])->middleware('uc:UC6.2,UC6.3,UC6.4');
     Route::post('/attendance', [HumanResourcesController::class, 'assignAttendance'])->middleware('uc:UC6.2,UC6.3');
     Route::patch('/attendance/{id}', [HumanResourcesController::class, 'updateAttendance'])->middleware('uc:UC6.2,UC6.3');
 
