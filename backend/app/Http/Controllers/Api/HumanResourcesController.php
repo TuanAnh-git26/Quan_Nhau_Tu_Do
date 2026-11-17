@@ -1271,6 +1271,7 @@ class HumanResourcesController extends Controller
 
     public function generatePayroll(Request $request)
     {
+        $this->assertActorRole(['Nhan su']);
         $data = $request->validate([
             'KyLuong' => ['required', 'date'],
             'MaCS' => ['nullable', 'integer', 'exists:CO_SO,MaCS'],
@@ -1390,6 +1391,7 @@ class HumanResourcesController extends Controller
 
     public function updatePayroll(Request $request, int $id)
     {
+        $this->assertActorRole(['Nhan su']);
         $data = $request->validate([
             'PhuCap' => ['sometimes', 'required', 'numeric', 'min:0'],
             'Thuong' => ['sometimes', 'required', 'numeric', 'min:0'],
@@ -1460,6 +1462,7 @@ class HumanResourcesController extends Controller
 
     public function submitPayroll(int $id)
     {
+        $this->assertActorRole(['Nhan su']);
         DB::transaction(function () use ($id) {
             $payroll = DB::table('BANG_LUONG')
                 ->where('MaBL', $id)
@@ -1531,6 +1534,7 @@ class HumanResourcesController extends Controller
 
     public function returnPayroll(Request $request, int $id)
     {
+        $this->assertActorRole(['Ke toan']);
         $data = $request->validate([
             'LyDo' => ['required', 'string', 'min:3', 'max:1000'],
         ]);
@@ -1567,6 +1571,7 @@ class HumanResourcesController extends Controller
 
     public function approvePayroll(int $id)
     {
+        $this->assertActorRole(['Ke toan']);
         DB::transaction(function () use ($id) {
             $payroll = DB::table('BANG_LUONG')
                 ->where('MaBL', $id)
@@ -1711,19 +1716,24 @@ class HumanResourcesController extends Controller
         }
     }
 
+    private function assertActorRole(array $roles): void
+    {
+        $actor = request()->user();
+        if (!$actor || $actor->TenVaiTro === 'Quan tri he thong') return;
+        abort_unless(in_array((string) $actor->TenVaiTro, $roles, true), 403, 'Vai trò hiện tại không được thực hiện thao tác này.');
+    }
+
     private function writeLog(
         string $action,
         string $object,
         string $details
     ): void {
-        // Route hiện tại chưa truyền thông tin tài khoản đăng nhập.
-        // MaTK để NULL theo thiết kế bảng NHAT_KY.
         DB::table('NHAT_KY')->insert([
             'ThoiGian' => now(),
             'HanhDong' => mb_substr($action, 0, 100),
             'DoiTuong' => mb_substr($object, 0, 100),
             'NoiDungThayDoi' => $details,
-            'MaTK' => null,
+            'MaTK' => request()->user()?->getAuthIdentifier(),
         ]);
     }
 }
