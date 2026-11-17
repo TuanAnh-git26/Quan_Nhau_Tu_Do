@@ -453,6 +453,7 @@ onUnmounted(() => {
 
         <BepBarView
           v-else-if="currentPage === 'bep-bar'"
+          :user="user"
         />
 
         <ComplaintsView
@@ -462,14 +463,17 @@ onUnmounted(() => {
 
         <InventoryView
           v-else-if="currentPage === 'inventory'"
+          :user="user"
         />
 
         <CashierView
           v-else-if="currentPage === 'cashier'"
+          :user="user"
         />
 
         <HumanResourcesView
           v-else-if="currentPage === 'hr'"
+          :user="user"
         />
 
         <FinanceView
