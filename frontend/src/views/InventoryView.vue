@@ -19,7 +19,7 @@ const allTabs = [
   { id: 'recipes', label: 'Định mức món', ucs: ['UC4.5'] }
 ]
 const tabs = computed(() => allTabs.filter(tab => tab.ucs.some(can)))
-const activeTab = ref(['Bep', 'Bar'].includes(props.user?.TenVaiTro) ? 'recipes' : 'overview')
+const activeTab = ref(['Bep', 'Bar'].includes(props.user?.TenVaiTro) ? 'recipes' : props.user?.TenVaiTro === 'Ban giam doc' ? 'purchase-orders' : 'overview')
 const branches = ref([])
 const employees = ref([])
 const ingredients = ref([])
