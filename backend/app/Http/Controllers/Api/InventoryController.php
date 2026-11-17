@@ -17,15 +17,29 @@ class InventoryController extends Controller
         $data = $request->validate([
             'MaCS' => ['nullable', 'integer', 'exists:CO_SO,MaCS'],
         ]);
+        $actor = $request->user();
 
-        $branchId = $data['MaCS'] ?? DB::table('CO_SO')
-            ->where('TrangThai', 'Dang hoat dong')
-            ->orderBy('MaCS')
-            ->value('MaCS');
+        if ($actor && $actor->TenVaiTro !== 'Quan tri he thong') {
+            $sessionBranch = (int) $request->session()->get('qntd_branch_id', 0);
+            abort_unless($sessionBranch > 0 && $sessionBranch === (int) $actor->MaCS, 403, 'Tài khoản chưa được gán cơ sở hợp lệ.');
+            if (isset($data['MaCS'])) {
+                abort_unless((int) $data['MaCS'] === $sessionBranch, 403, 'Bạn không có quyền truy cập cơ sở này.');
+            }
+            return $sessionBranch;
+        }
 
+        $branchId = $data['MaCS'] ?? (int) $request->session()->get('qntd_branch_id', 0);
+        if (!$branchId) $branchId = DB::table('CO_SO')->where('TrangThai', 'Dang hoat dong')->orderBy('MaCS')->value('MaCS');
         abort_if(!$branchId, 422, 'Chưa có cơ sở đang hoạt động.');
-
         return (int) $branchId;
+    }
+
+    private function assertBranchAccess(int $branchId): void
+    {
+        $actor = request()->user();
+        if (!$actor || $actor->TenVaiTro === 'Quan tri he thong') return;
+        $sessionBranch = (int) request()->session()->get('qntd_branch_id', 0);
+        abort_unless($branchId === $sessionBranch && $branchId === (int) $actor->MaCS, 403, 'Tài nguyên không thuộc cơ sở được phép.');
     }
 
     private function ensureActiveBranch(int $branchId): void
@@ -463,9 +477,7 @@ class InventoryController extends Controller
             )
             ->orderByDesc('po.MaPO');
 
-        if ($request->filled('MaCS')) {
-            $query->where('po.MaCS', $request->input('MaCS'));
-        }
+        $query->where('po.MaCS', $this->branchId($request));
         if ($request->filled('TrangThai')) {
             $query->where('po.TrangThai', $request->input('TrangThai'));
         }
@@ -518,6 +530,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($data, $id) {
             $order = DB::table('DON_DAT_HANG')->where('MaPO', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Không tìm thấy đơn đặt hàng.');
+            $this->assertBranchAccess((int) $order->MaCS);
 
             if (!in_array($order->TrangThai, ['Nhap', 'Tu choi'], true)) {
                 throw ValidationException::withMessages([
@@ -549,6 +562,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($id) {
             $order = DB::table('DON_DAT_HANG')->where('MaPO', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Không tìm thấy đơn đặt hàng.');
+            $this->assertBranchAccess((int) $order->MaCS);
 
             if (!in_array($order->TrangThai, ['Nhap', 'Tu choi'], true)) {
                 throw ValidationException::withMessages(['TrangThai' => 'Đơn không ở trạng thái có thể trình duyệt.']);
@@ -578,6 +592,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($id, $data) {
             $order = DB::table('DON_DAT_HANG')->where('MaPO', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Không tìm thấy đơn đặt hàng.');
+            $this->assertBranchAccess((int) $order->MaCS);
             if ($order->TrangThai !== 'Cho duyet') {
                 throw ValidationException::withMessages(['TrangThai' => 'Chỉ PO đang chờ duyệt mới được phê duyệt.']);
             }
@@ -605,6 +620,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($id, $data) {
             $order = DB::table('DON_DAT_HANG')->where('MaPO', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Không tìm thấy đơn đặt hàng.');
+            $this->assertBranchAccess((int) $order->MaCS);
             if ($order->TrangThai !== 'Cho duyet') {
                 throw ValidationException::withMessages(['TrangThai' => 'Chỉ PO đang chờ duyệt mới được từ chối.']);
             }
@@ -627,6 +643,7 @@ class InventoryController extends Controller
         DB::transaction(function () use ($id) {
             $order = DB::table('DON_DAT_HANG')->where('MaPO', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Không tìm thấy đơn đặt hàng.');
+            $this->assertBranchAccess((int) $order->MaCS);
             if ($order->TrangThai !== 'Da duyet') {
                 throw ValidationException::withMessages(['TrangThai' => 'PO phải được phê duyệt trước khi gửi nhà cung cấp.']);
             }
@@ -651,7 +668,7 @@ class InventoryController extends Controller
             )
             ->orderByDesc('pn.MaPN');
 
-        if ($request->filled('MaCS')) $query->where('pn.MaCS', $request->input('MaCS'));
+        $query->where('pn.MaCS', $this->branchId($request));
         if ($request->filled('TrangThai')) $query->where('pn.TrangThai', $request->input('TrangThai'));
 
         $receipts = $query->limit(100)->get();
@@ -897,7 +914,7 @@ class InventoryController extends Controller
             ->select('px.*', 'cs.TenCS', 'nv.HoTen as NguoiLap', 'duyet.HoTen as NguoiDuyet')
             ->orderByDesc('px.MaPX');
 
-        if ($request->filled('MaCS')) $query->where('px.MaCS', $request->input('MaCS'));
+        $query->where('px.MaCS', $this->branchId($request));
 
         $issues = $query->limit(100)->get();
         foreach ($issues as $issue) {
