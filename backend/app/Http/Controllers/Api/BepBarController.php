@@ -317,9 +317,11 @@ class BepBarController extends Controller
             $row->items = DB::table('CT_PHIEU_XUAT as cx')
                 ->join('NGUYEN_LIEU as nl', 'nl.MaNL', '=', 'cx.MaNL')
                 ->where('cx.MaPX', $row->MaPX)
+                ->groupBy('cx.MaNL', 'nl.TenNL', 'nl.DonViTinh')
                 ->get([
                     'cx.MaNL', 'nl.TenNL', 'nl.DonViTinh',
-                    'cx.SoLuongDeNghi', 'cx.SoLuongXuat', 'cx.MaCTPN',
+                    DB::raw('SUM(COALESCE(cx.SoLuongDeNghi, 0)) as SoLuongDeNghi'),
+                    DB::raw('SUM(cx.SoLuongXuat) as SoLuongXuat'),
                 ]);
         }
         return response()->json($rows);
