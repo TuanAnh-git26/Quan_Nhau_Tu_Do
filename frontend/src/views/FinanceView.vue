@@ -44,7 +44,7 @@ const err = e => Object.values(e?.response?.data?.errors || {}).flat().join(' ')
 const columns = computed(() => ({
   vouchers: [['MaPhieuThuChi', 'Mã phiếu'], ['Loai', 'Loại'], ['NgayLap', 'Ngày lập'], ['NoiDung', 'Nội dung'], ['SoTien', 'Số tiền'], ['NguoiLap', 'Người lập'], ['TrangThai', 'Trạng thái']],
   promotions: [['MaKM', 'Mã'], ['TenKM', 'Chương trình'], ['HinhThuc', 'Hình thức'], ['GiaTri', 'Giá trị'], ['NgayBD', 'Bắt đầu'], ['NgayKT', 'Kết thúc'], ['NganSach', 'Ngân sách'], ['TrangThai', 'Trạng thái']],
-  performance: [['MaKM', 'Mã'], ['TenKM', 'Chương trình'], ['SoHoaDon', 'Hóa đơn'], ['DoanhThuHoaDonApDung', 'Doanh thu hóa đơn áp dụng'], ['TongDaGiam', 'Đã giảm'], ['NganSach', 'Ngân sách']],
+  performance: [['MaKM', 'Mã'], ['TenKM', 'Chương trình'], ['SoHoaDon', 'Hóa đơn'], ['DoanhThuHoaDonApDung', 'Doanh thu hóa đơn áp dụng'], ['TongDaGiam', 'Đã giảm'], ['NganSach', 'Ngân sách'], ['TyLeSuDungNganSach', 'Đã dùng ngân sách (%)']],
   budgets: [['MaKHNS', 'Mã'], ['TenKH', 'Kế hoạch'], ['KyKeHoach', 'Kỳ'], ['SoTien', 'Ngân sách'], ['TrangThai', 'Trạng thái']],
   reconciliation: [['MaBC', 'Báo cáo'], ['NgayCa', 'Ngày'], ['TenCa', 'Ca'], ['TienMat', 'Tiền mặt'], ['KhongTienMat', 'Không tiền mặt'], ['ChenhLech', 'Chênh lệch'], ['TrangThai', 'Trạng thái']],
 })[tab.value] || [])
@@ -72,6 +72,7 @@ const maxDailyRevenue = computed(() => Math.max(1, ...dailyRevenue.value.map(x =
 const mayCreate = computed(() => ['vouchers', 'promotions', 'budgets'].includes(tab.value))
 function format(k, v) {
   if (['SoTien', 'TienMat', 'KhongTienMat', 'ChenhLech', 'TongDaGiam', 'NganSach', 'DoanhThuHoaDonApDung'].includes(k)) return cash(v)
+  if (k === 'TyLeSuDungNganSach') return Number(v || 0).toFixed(1) + '%'
   if (['TrangThai', 'HinhThuc'].includes(k)) return label(v)
   return v ?? '—'
 }
@@ -111,7 +112,7 @@ async function load() {
         performance: '/finance/promotion-performance', reconciliation: '/finance/reconciliation',
       }
       const params = { page: page.value, per_page: pageSize.value, MaCS: branch.value }
-      if (['reconciliation', 'vouchers'].includes(tab.value)) { params.from = from.value; params.to = to.value }
+      if (['reconciliation', 'vouchers', 'performance'].includes(tab.value)) { params.from = from.value; params.to = to.value }
       const { data } = await api.get(endpoints[tab.value], { params })
       if (id === requestSequence) {
         rows.value = Array.isArray(data) ? data.slice((page.value - 1) * pageSize.value, page.value * pageSize.value) : data?.data || []
@@ -202,8 +203,8 @@ onMounted(init)
         <label class="min-w-48 flex-1 text-xs font-semibold">Cơ sở<select v-model="branch" :disabled="!isAdmin" class="mt-1 w-full rounded-lg border p-2" @change="selectBranch"><option v-for="b in branches" :key="b.MaCS" :value="String(b.MaCS)">{{ b.TenCS }}</option></select></label>
         <label v-if="needsEmployee && isAdmin" class="min-w-48 flex-1 text-xs font-semibold">Nhân viên thực hiện<select v-model="employee" class="mt-1 w-full rounded-lg border p-2"><option v-for="v in employees" :key="v.MaNV" :value="String(v.MaNV)">{{ v.HoTen }}</option></select></label>
         <div v-else-if="needsEmployee" class="min-w-48 flex-1 text-xs font-semibold">Nhân viên thực hiện<p class="mt-1 rounded-lg border bg-slate-50 p-2">{{ props.user?.HoTen || 'Chưa gán nhân viên' }}</p></div>
-        <label v-if="['overview', 'vouchers', 'reconciliation'].includes(tab)" class="text-xs font-semibold">Từ ngày<input v-model="from" type="date" class="mt-1 rounded-lg border p-2" /></label>
-        <label v-if="['overview', 'vouchers', 'reconciliation'].includes(tab)" class="text-xs font-semibold">Đến ngày<input v-model="to" type="date" class="mt-1 rounded-lg border p-2" /></label>
+        <label v-if="['overview', 'vouchers', 'reconciliation', 'performance'].includes(tab)" class="text-xs font-semibold">Từ ngày<input v-model="from" type="date" class="mt-1 rounded-lg border p-2" /></label>
+        <label v-if="['overview', 'vouchers', 'reconciliation', 'performance'].includes(tab)" class="text-xs font-semibold">Đến ngày<input v-model="to" type="date" class="mt-1 rounded-lg border p-2" /></label>
         <button class="rounded-lg border px-3 py-2 text-sm" @click="page = 1; load()">Lọc</button>
         <button v-if="mayCreate" class="rounded-lg bg-slate-800 px-3 py-2 text-sm text-white" @click="open()">+ Tạo mới</button>
       </div>
