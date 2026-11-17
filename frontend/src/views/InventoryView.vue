@@ -2,18 +2,24 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '../services/api'
 
-const tabs = [
-  { id: 'overview', label: 'Tổng quan kho' },
-  { id: 'ingredients', label: 'Nguyên liệu' },
-  { id: 'suppliers', label: 'Nhà cung cấp' },
-  { id: 'purchase-orders', label: 'Đơn mua hàng' },
-  { id: 'receipts', label: 'Nhập kho' },
-  { id: 'issues', label: 'Xuất kho FIFO' },
-  { id: 'stocktakes', label: 'Kiểm kê' },
-  { id: 'recipes', label: 'Định mức món' }
+const props = defineProps({ user: { type: Object, required: true } })
+const can = uc => (props.user?.Quyen || []).includes('*') || (props.user?.Quyen || []).includes(uc)
+const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
+const isBuyer = computed(() => props.user?.TenVaiTro === 'Mua hang')
+const isBoard = computed(() => props.user?.TenVaiTro === 'Ban giam doc')
+const isWarehouse = computed(() => can('UC4.3'))
+const allTabs = [
+  { id: 'overview', label: 'Tổng quan kho', ucs: ['UC4.1', 'UC4.7'] },
+  { id: 'ingredients', label: 'Nguyên liệu', ucs: ['UC4.1'] },
+  { id: 'suppliers', label: 'Nhà cung cấp', ucs: ['UC4.6'] },
+  { id: 'purchase-orders', label: 'Đơn mua hàng', ucs: ['UC4.7'] },
+  { id: 'receipts', label: 'Nhập kho', ucs: ['UC4.2'] },
+  { id: 'issues', label: 'Xuất kho FIFO', ucs: ['UC4.3'] },
+  { id: 'stocktakes', label: 'Kiểm kê', ucs: ['UC4.4'] },
+  { id: 'recipes', label: 'Định mức món', ucs: ['UC4.5'] }
 ]
-
-const activeTab = ref('overview')
+const tabs = computed(() => allTabs.filter(tab => tab.ucs.some(can)))
+const activeTab = ref(['Bep', 'Bar'].includes(props.user?.TenVaiTro) ? 'recipes' : 'overview')
 const branches = ref([])
 const employees = ref([])
 const ingredients = ref([])
@@ -27,8 +33,8 @@ const recipes = ref([])
 const dashboard = ref({})
 const supplierHistory = ref(null)
 
-const branchId = ref('')
-const employeeId = ref('')
+const branchId = ref(String(props.user?.MaCS || ''))
+const employeeId = ref(String(props.user?.MaNV || ''))
 const search = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -153,13 +159,23 @@ function handleError(err, fallback) {
 async function loadBase() {
   try {
     const branchResponse = await api.get('/branches')
-    branches.value = branchResponse.data || []
+    const allBranches = Array.isArray(branchResponse.data) ? branchResponse.data : []
+    branches.value = isAdmin.value
+      ? allBranches
+      : allBranches.filter(item => Number(item.MaCS) === Number(props.user?.MaCS))
 
-    if (!branchId.value && branches.value.length) {
-      branchId.value = String(branches.value[0].MaCS)
+    if (!branchId.value && branches.value.length) branchId.value = String(branches.value[0].MaCS)
+    if (!isAdmin.value && props.user?.MaNV) {
+      employees.value = [{ MaNV: props.user.MaNV, HoTen: props.user.HoTen, MaCS: props.user.MaCS, TrangThai: 'Dang lam' }]
+      employeeId.value = String(props.user.MaNV)
+    } else if (isAdmin.value && branchId.value) {
+      const { data } = await api.get('/employees', { params: { MaCS: branchId.value } })
+      employees.value = Array.isArray(data) ? data : (data?.data || [])
+      if (!employeeId.value && employees.value.length) employeeId.value = String(employees.value[0].MaNV)
     }
+    if (!tabs.value.some(item => item.id === activeTab.value)) activeTab.value = tabs.value[0]?.id || ''
   } catch (err) {
-    handleError(err, 'Không tải được danh sách cơ sở.')
+    handleError(err, 'Không tải được danh sách cơ sở hoặc nhân viên thao tác.')
   }
 }
 
@@ -169,33 +185,46 @@ async function loadAll() {
   error.value = ''
   try {
     const params = { MaCS: branchId.value }
-    const [dash, ing, sup, stockRows, po, rec, iss, count, recipeRows, employeeRows] = await Promise.all([
-      api.get('/inventory/dashboard', { params }),
-      api.get('/ingredients', { params }),
-      api.get('/suppliers'),
-      api.get('/inventory/stock', { params }),
-      api.get('/inventory/purchase-orders', { params }),
-      api.get('/inventory/receipts', { params }),
-      api.get('/inventory/issues', { params }),
-      api.get('/inventory/stocktakes', { params }),
-      api.get('/inventory/recipes'),
-      api.get('/employees', { params })
-    ])
-    dashboard.value = dash.data || {}
-    ingredients.value = ing.data || []
-    suppliers.value = sup.data || []
-    stock.value = stockRows.data || []
-    purchaseOrders.value = po.data || []
-    receipts.value = rec.data || []
-    issues.value = iss.data || []
-    stocktakes.value = count.data || []
-    recipes.value = recipeRows.data || []
-    employees.value = employeeRows.data || []
+    const jobs = []
+    const add = (key, promise) => jobs.push({ key, promise })
+
+    if (can('UC4.1') || can('UC4.7')) {
+      add('dashboard', api.get('/inventory/dashboard', { params }))
+      add('stock', api.get('/inventory/stock', { params }))
+    }
+    if (can('UC4.1') || can('UC4.5') || can('UC4.7')) add('ingredients', api.get('/ingredients', { params }))
+    if (can('UC4.6')) add('suppliers', api.get('/suppliers'))
+    if (can('UC4.7')) add('purchaseOrders', api.get('/inventory/purchase-orders', { params }))
+    if (can('UC4.2')) add('receipts', api.get('/inventory/receipts', { params }))
+    if (can('UC4.3')) add('issues', api.get('/inventory/issues', { params }))
+    if (can('UC4.4')) add('stocktakes', api.get('/inventory/stocktakes', { params }))
+    if (can('UC4.5')) add('recipes', api.get('/inventory/recipes'))
+
+    const results = await Promise.allSettled(jobs.map(job => job.promise))
+    const errors = []
+    results.forEach((result, index) => {
+      const key = jobs[index].key
+      if (result.status === 'rejected') {
+        errors.push(key + ': ' + (result.reason?.response?.data?.message || result.reason?.message || 'Không tải được dữ liệu.'))
+        return
+      }
+      const data = result.value.data
+      if (key === 'dashboard') dashboard.value = data || {}
+      if (key === 'ingredients') ingredients.value = Array.isArray(data) ? data : []
+      if (key === 'suppliers') suppliers.value = Array.isArray(data) ? data : []
+      if (key === 'stock') stock.value = Array.isArray(data) ? data : []
+      if (key === 'purchaseOrders') purchaseOrders.value = Array.isArray(data) ? data : (data?.data || [])
+      if (key === 'receipts') receipts.value = Array.isArray(data) ? data : (data?.data || [])
+      if (key === 'issues') issues.value = Array.isArray(data) ? data : (data?.data || [])
+      if (key === 'stocktakes') stocktakes.value = Array.isArray(data) ? data : (data?.data || [])
+      if (key === 'recipes') recipes.value = Array.isArray(data) ? data : []
+    })
+    if (errors.length) error.value = errors.join(' · ')
     if (!activeEmployees.value.some(item => Number(item.MaNV) === Number(employeeId.value))) {
       employeeId.value = activeEmployees.value.length ? String(activeEmployees.value[0].MaNV) : ''
     }
   } catch (err) {
-    handleError(err, 'Không tải được dữ liệu kho. Kiểm tra API Đợt 4 và kết nối máy chủ.')
+    handleError(err, 'Không tải được dữ liệu kho.')
   } finally {
     loading.value = false
   }
@@ -208,7 +237,13 @@ onMounted(async () => {
 
 watch(branchId, async (next, previous) => {
   if (!previous) return
-  employeeId.value = ''
+  if (isAdmin.value) {
+    try {
+      const { data } = await api.get('/employees', { params: { MaCS: next } })
+      employees.value = Array.isArray(data) ? data : (data?.data || [])
+      employeeId.value = String(employees.value[0]?.MaNV || '')
+    } catch (err) { handleError(err, 'Không tải được nhân viên cơ sở.') }
+  }
   await loadAll()
 })
 
