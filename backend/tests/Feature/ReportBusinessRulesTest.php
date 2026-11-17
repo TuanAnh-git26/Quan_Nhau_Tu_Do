@@ -97,6 +97,11 @@ class ReportBusinessRulesTest extends TestCase
 
     private function signIn(array $identity, int $branch): void
     {
+        // Mỗi lần signIn trong test có thể chuyển sang tài khoản khác.
+        // Xóa session password_hash_web của tài khoản trước để middleware
+        // AuthenticateSession không hiểu nhầm đây là phiên bị đổi mật khẩu.
+        $this->flushSession();
+
         $this->actingAs($identity['user'], 'web');
         $this->withSession([
             'qntd_branch_id' => $branch,
