@@ -41,8 +41,6 @@ class EnsureBranchScope
             abort_unless((int) $request->input('MaCS') === $branch, 403, 'Bạn không có quyền truy cập cơ sở này.');
         }
 
-        $path = $request->path();
-
         // Các danh sách/chức năng nghiệp vụ gắn với cơ sở. Không để controller tự rơi về
         // cơ sở đầu tiên khi client bỏ quên MaCS.
         $branchScoped = preg_match(
@@ -67,7 +65,13 @@ class EnsureBranchScope
             );
         }
 
-        if ($request->filled('MaBan')) {
+        $path = $request->path();
+
+        // UC2.5 tự kiểm tra bàn trong ComplaintController và trả lỗi validation 422
+        // khi bàn không thuộc cơ sở; không chặn trước bằng 403 tại middleware.
+        $isComplaintSubmission = $path === 'api/complaints' && $request->isMethod('post');
+
+        if ($request->filled('MaBan') && !$isComplaintSubmission) {
             $tableBranch = DB::table('BAN as b')
                 ->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')
                 ->where('b.MaBan', $request->input('MaBan'))
