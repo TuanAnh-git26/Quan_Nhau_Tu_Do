@@ -580,13 +580,13 @@ async function saveRecipe() {
     <div class="inventory-heading-tools">
       <label class="inventory-branch-select">
         <span>Cơ sở</span>
-        <select v-model="branchId">
+        <select v-model="branchId" :disabled="!isAdmin">
           <option v-for="branch in branches" :key="branch.MaCS" :value="String(branch.MaCS)">
             {{ branch.TenCS }}
           </option>
         </select>
       </label>
-      <label class="inventory-branch-select">
+      <label v-if="isAdmin" class="inventory-branch-select">
         <span>Nhân viên thao tác</span>
         <select v-model="employeeId" :disabled="!activeEmployees.length">
           <option value="">Chọn nhân viên</option>
@@ -595,6 +595,7 @@ async function saveRecipe() {
           </option>
         </select>
       </label>
+      <div v-else class="inventory-branch-select"><span>Nhân viên thao tác</span><strong>{{ props.user?.HoTen || 'Chưa gán nhân viên' }}</strong></div>
       <button class="secondary-btn" @click="loadAll" :disabled="loading">↻ Làm mới</button>
     </div>
   </div>
@@ -646,10 +647,10 @@ async function saveRecipe() {
     </section>
 
     <section class="quick-grid inventory-quick-grid">
-      <button class="quick-card" @click="openPO"><span class="quick-icon">＋</span><span><strong>Tạo đơn mua hàng</strong><small>Lập PO và trình duyệt nhà cung cấp</small></span><span class="quick-arrow">›</span></button>
-      <button class="quick-card" @click="openReceipt"><span class="quick-icon">↓</span><span><strong>Lập phiếu nhập kho</strong><small>Ghi nhận hàng nhận và lô nguyên liệu</small></span><span class="quick-arrow">›</span></button>
-      <button class="quick-card" @click="openIssue"><span class="quick-icon">↑</span><span><strong>Xuất kho FIFO</strong><small>Xuất lô cũ trước, loại lô hết hạn</small></span><span class="quick-arrow">›</span></button>
-      <button class="quick-card" @click="openStocktake"><span class="quick-icon">✓</span><span><strong>Lập phiếu kiểm kê</strong><small>Đối chiếu tồn sổ sách và thực tế</small></span><span class="quick-arrow">›</span></button>
+      <button v-if="isBuyer" class="quick-card" @click="openPO"><span class="quick-icon">＋</span><span><strong>Tạo đơn mua hàng</strong><small>Lập PO và trình duyệt nhà cung cấp</small></span><span class="quick-arrow">›</span></button>
+      <button v-if="can('UC4.2')" class="quick-card" @click="openReceipt"><span class="quick-icon">↓</span><span><strong>Lập phiếu nhập kho</strong><small>Ghi nhận hàng nhận và lô nguyên liệu</small></span><span class="quick-arrow">›</span></button>
+      <button v-if="can('UC4.3')" class="quick-card" @click="activeTab = 'issues'"><span class="quick-icon">↑</span><span><strong>Xuất kho FIFO</strong><small>Xuất lô cũ trước, loại lô hết hạn</small></span><span class="quick-arrow">›</span></button>
+      <button v-if="can('UC4.4')" class="quick-card" @click="openStocktake"><span class="quick-icon">✓</span><span><strong>Lập phiếu kiểm kê</strong><small>Đối chiếu tồn sổ sách và thực tế</small></span><span class="quick-arrow">›</span></button>
     </section>
   </template>
 
@@ -657,7 +658,7 @@ async function saveRecipe() {
     <section class="panel table-panel">
       <div class="panel-heading">
         <div><h2>Danh mục nguyên liệu</h2><p class="panel-subtitle">{{ ingredients.length }} nguyên liệu được ghi nhận</p></div>
-        <div class="inventory-toolbar"><input v-model="search" placeholder="Tìm nguyên liệu…" /><button class="primary-btn" @click="openIngredient">＋ Thêm nguyên liệu</button></div>
+        <div class="inventory-toolbar"><input v-model="search" placeholder="Tìm nguyên liệu…" /><button v-if="can('UC4.1')" class="primary-btn" @click="openIngredient">＋ Thêm nguyên liệu</button></div>
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Mã</th><th>Tên nguyên liệu</th><th>Đơn vị</th><th>Tồn hiện tại</th><th>Tồn tối thiểu</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
@@ -668,7 +669,7 @@ async function saveRecipe() {
             <td class="code-cell">#{{ item.MaNL }}</td><td><strong>{{ item.TenNL }}</strong></td><td>{{ item.DonViTinh }}</td>
             <td :class="item.CanhBao ? 'price-cell inventory-low' : ''">{{ quantity(item.TonHienTai) }}</td>
             <td>{{ quantity(item.TonToiThieu) }}</td><td><span :class="statusClass(item.TrangThai)">{{ item.TrangThai === 'Dang su dung' ? 'Đang sử dụng' : 'Ngừng sử dụng' }}</span></td>
-            <td><div class="actions"><button class="text-btn" @click="openIngredient(item)">Sửa</button><button v-if="item.TrangThai === 'Dang su dung'" class="text-btn danger-text" @click="disableIngredient(item)">Ngừng</button></div></td>
+            <td><div v-if="can('UC4.1')" class="actions"><button class="text-btn" @click="openIngredient(item)">Sửa</button><button v-if="item.TrangThai === 'Dang su dung'" class="text-btn danger-text" @click="disableIngredient(item)">Ngừng</button></div><span v-else>Chỉ xem</span></td>
           </tr>
         </tbody>
       </table></div>
@@ -679,7 +680,7 @@ async function saveRecipe() {
     <section class="panel table-panel">
       <div class="panel-heading">
         <div><h2>Nhà cung cấp</h2><p class="panel-subtitle">Thông tin liên hệ và trạng thái hợp tác</p></div>
-        <div class="inventory-toolbar"><input v-model="search" placeholder="Tìm nhà cung cấp…" /><button class="primary-btn" @click="openSupplier">＋ Thêm nhà cung cấp</button></div>
+        <div class="inventory-toolbar"><input v-model="search" placeholder="Tìm nhà cung cấp…" /><button v-if="isBuyer" class="primary-btn" @click="openSupplier">＋ Thêm nhà cung cấp</button></div>
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Mã</th><th>Nhà cung cấp</th><th>Số điện thoại</th><th>Email</th><th>Địa chỉ</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
@@ -689,7 +690,7 @@ async function saveRecipe() {
           <tr v-for="item in filteredSuppliers" :key="item.MaNCC">
             <td class="code-cell">#{{ item.MaNCC }}</td><td><strong>{{ item.TenNCC }}</strong></td><td>{{ item.SDT || '—' }}</td><td>{{ item.Email || '—' }}</td><td>{{ item.DiaChi || '—' }}</td>
             <td><span :class="statusClass(item.TrangThai)">{{ item.TrangThai === 'Dang hop tac' ? 'Đang hợp tác' : 'Ngừng hợp tác' }}</span></td>
-            <td><div class="actions"><button class="text-btn" @click="openSupplierHistory(item)">Lịch sử</button><button class="text-btn" @click="openSupplier(item)">Sửa</button><button v-if="item.TrangThai === 'Dang hop tac'" class="text-btn danger-text" @click="disableSupplier(item)">Ngừng</button></div></td>
+            <td><div v-if="isBuyer" class="actions"><button class="text-btn" @click="openSupplierHistory(item)">Lịch sử</button><button class="text-btn" @click="openSupplier(item)">Sửa</button><button v-if="item.TrangThai === 'Dang hop tac'" class="text-btn danger-text" @click="disableSupplier(item)">Ngừng</button></div><span v-else>Chỉ xem</span></td>
           </tr>
         </tbody>
       </table></div>
@@ -700,7 +701,7 @@ async function saveRecipe() {
     <section class="panel table-panel">
       <div class="panel-heading">
         <div><h2>Đơn đặt hàng (PO)</h2><p class="panel-subtitle">Nháp → Chờ duyệt → Đã duyệt → Đã gửi → Nhận một phần/đủ</p></div>
-        <button class="primary-btn" @click="openPO">＋ Tạo đơn mua hàng</button>
+        <button v-if="isBuyer" class="primary-btn" @click="openPO">＋ Tạo đơn mua hàng</button>
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Mã PO</th><th>Ngày lập</th><th>Nhà cung cấp</th><th>Cơ sở</th><th>Tổng tiền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
@@ -711,11 +712,11 @@ async function saveRecipe() {
             <td class="code-cell">#PO-{{ item.MaPO }}</td><td>{{ dateTime(item.NgayLap) }}</td><td><strong>{{ item.TenNCC }}</strong></td><td>{{ item.TenCS }}</td><td class="price-cell">{{ money(item.TongTien) }}</td>
             <td><span :class="statusClass(item.TrangThai)">{{ poStatus(item.TrangThai) }}</span><small v-if="item.LyDoTuChoi" class="inventory-rejection">{{ item.LyDoTuChoi }}</small></td>
             <td><div class="actions inventory-actions">
-              <button v-if="['Nhap','Tu choi'].includes(item.TrangThai)" class="text-btn" @click="openEditPO(item)">Sửa</button><button v-if="['Nhap','Tu choi'].includes(item.TrangThai)" class="text-btn" @click="submitPO(item)">Trình duyệt</button>
-              <button v-if="item.TrangThai === 'Cho duyet'" class="text-btn" @click="approvePO(item)">Duyệt</button>
-              <button v-if="item.TrangThai === 'Cho duyet'" class="text-btn danger-text" @click="rejectPO(item)">Từ chối</button>
-              <button v-if="item.TrangThai === 'Da duyet'" class="text-btn" @click="sendPO(item)">Đã gửi NCC</button>
-              <button v-if="['Da gui','Da nhan mot phan'].includes(item.TrangThai)" class="text-btn" @click="openReceiptFromPO(item)">Nhập hàng</button>
+              <button v-if="isBuyer && ['Nhap','Tu choi'].includes(item.TrangThai)" class="text-btn" @click="openEditPO(item)">Sửa</button><button v-if="isBuyer && ['Nhap','Tu choi'].includes(item.TrangThai)" class="text-btn" @click="submitPO(item)">Trình duyệt</button>
+              <button v-if="isBoard && item.TrangThai === 'Cho duyet'" class="text-btn" @click="approvePO(item)">Duyệt</button>
+              <button v-if="isBoard && item.TrangThai === 'Cho duyet'" class="text-btn danger-text" @click="rejectPO(item)">Từ chối</button>
+              <button v-if="isBuyer && item.TrangThai === 'Da duyet'" class="text-btn" @click="sendPO(item)">Đã gửi NCC</button>
+              <button v-if="can('UC4.2') && ['Da gui','Da nhan mot phan'].includes(item.TrangThai)" class="text-btn" @click="openReceiptFromPO(item)">Nhập hàng</button>
             </div></td>
           </tr>
         </tbody>
@@ -725,7 +726,7 @@ async function saveRecipe() {
 
   <template v-else-if="activeTab === 'receipts'">
     <section class="panel table-panel">
-      <div class="panel-heading"><div><h2>Phiếu nhập kho</h2><p class="panel-subtitle">Mỗi phiếu nhập đã xác nhận tạo các lô tồn kho</p></div><button class="primary-btn" @click="openReceipt">＋ Lập phiếu nhập</button></div>
+      <div class="panel-heading"><div><h2>Phiếu nhập kho</h2><p class="panel-subtitle">Mỗi phiếu nhập đã xác nhận tạo các lô tồn kho</p></div><button v-if="can('UC4.2')" class="primary-btn" @click="openReceipt">＋ Lập phiếu nhập</button></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Mã phiếu</th><th>Ngày nhập</th><th>Nhà cung cấp</th><th>PO</th><th>Người nhập</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
         <tbody>
@@ -743,14 +744,20 @@ async function saveRecipe() {
 
   <template v-else-if="activeTab === 'issues'">
     <section class="panel table-panel">
-      <div class="panel-heading"><div><h2>Phiếu xuất kho FIFO</h2><p class="panel-subtitle">Ưu tiên lô nhập trước; cùng ngày ưu tiên hạn sử dụng gần hơn; không xuất lô quá hạn</p></div><button class="primary-btn" @click="openIssue">＋ Tạo phiếu xuất</button></div>
+      <div class="panel-heading"><div><h2>Phiếu xuất kho FIFO</h2><p class="panel-subtitle">Bếp/Bar gửi đề nghị; Kho xác nhận và hệ thống trừ tồn theo FIFO</p></div></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Mã phiếu</th><th>Ngày xuất</th><th>Bộ phận nhận</th><th>Người lập</th><th>Người xác nhận</th><th>Trạng thái</th></tr></thead>
+        <thead><tr><th>Mã phiếu</th><th>Ngày đề nghị</th><th>Bộ phận nhận</th><th>Người lập</th><th>Nguyên liệu / số lượng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
         <tbody>
-          <tr v-if="loading"><td colspan="6" class="empty-state">Đang tải dữ liệu…</td></tr>
-          <tr v-else-if="!issues.length"><td colspan="6" class="empty-state">Chưa có phiếu xuất kho.</td></tr>
+          <tr v-if="loading"><td colspan="7" class="empty-state">Đang tải dữ liệu…</td></tr>
+          <tr v-else-if="!issues.length"><td colspan="7" class="empty-state">Chưa có phiếu xuất kho.</td></tr>
           <tr v-for="item in issues" :key="item.MaPX">
-            <td class="code-cell">#PX-{{ item.MaPX }}</td><td>{{ dateTime(item.NgayXuat) }}</td><td>{{ item.BoPhanNhan === 'Bep' ? 'Bếp' : 'Bar' }}</td><td>{{ item.NguoiLap }}</td><td>{{ item.NguoiDuyet || '—' }}</td><td><span :class="statusClass(item.TrangThai)">{{ docStatus(item.TrangThai) }}</span></td>
+            <td class="code-cell">#PX-{{ item.MaPX }}</td>
+            <td>{{ dateTime(item.NgayXuat) }}</td>
+            <td>{{ item.BoPhanNhan === 'Bep' ? 'Bếp' : 'Bar' }}</td>
+            <td>{{ item.NguoiLap }}</td>
+            <td><div v-for="(line,index) in item.items || []" :key="index" class="text-xs">{{ line.TenNL }} · đề nghị {{ quantity(line.SoLuongDeNghi) }} {{ line.DonViTinh }} · xuất {{ quantity(line.SoLuongXuat) }}</div></td>
+            <td><span :class="statusClass(item.TrangThai)">{{ docStatus(item.TrangThai) }}</span></td>
+            <td><button v-if="isWarehouse && item.TrangThai === 'Cho xac nhan'" class="text-btn" :disabled="saving" @click="confirmIssue(item)">Xác nhận xuất FIFO</button></td>
           </tr>
         </tbody>
       </table></div>
@@ -759,7 +766,7 @@ async function saveRecipe() {
 
   <template v-else-if="activeTab === 'stocktakes'">
     <section class="panel table-panel">
-      <div class="panel-heading"><div><h2>Kiểm kê kho</h2><p class="panel-subtitle">So sánh số lượng sổ sách với số lượng thực tế và ghi nhận chênh lệch</p></div><button class="primary-btn" @click="openStocktake">＋ Lập phiếu kiểm kê</button></div>
+      <div class="panel-heading"><div><h2>Kiểm kê kho</h2><p class="panel-subtitle">So sánh số lượng sổ sách với số lượng thực tế và ghi nhận chênh lệch</p></div><button v-if="can('UC4.4')" class="primary-btn" @click="openStocktake">＋ Lập phiếu kiểm kê</button></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Mã phiếu</th><th>Ngày kiểm kê</th><th>Cơ sở</th><th>Người lập</th><th>Số mặt hàng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
         <tbody>
