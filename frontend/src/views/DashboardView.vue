@@ -11,6 +11,7 @@ const emit = defineEmits(['navigate'])
 const has = uc => (props.user?.Quyen || []).includes('*') || (props.user?.Quyen || []).includes(uc)
 const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
 const isBoard = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Ban giam doc')
+const maxFinanceDaily = computed(() => Math.max(1, ...(finance.value?.DoanhThuTheoNgay || []).map(x => Number(x.DoanhThu || 0))))
 const maySeeMenu = computed(() => ['UC2.1', 'UC2.2', 'UC2.3'].some(has))
 const maySeeCategories = computed(() => ['UC2.1', 'UC2.2', 'UC2.4'].some(has))
 const maySeeFinance = computed(() => has('UC7.5'))
@@ -157,7 +158,7 @@ onUnmounted(() => { sequence++ })
         <div class="mt-4 flex min-h-36 items-end gap-2 overflow-x-auto">
           <div v-for="day in finance.DoanhThuTheoNgay" :key="day.Ngay" class="flex min-w-12 flex-1 flex-col items-center justify-end gap-1">
             <span class="text-[10px] text-slate-500">{{ money(day.DoanhThu) }}</span>
-            <div class="w-full max-w-12 rounded-t bg-emerald-600" :style="{ height: Math.max(8, Number(day.DoanhThu || 0) / Math.max(1, ...finance.DoanhThuTheoNgay.map(x => Number(x.DoanhThu || 0))) * 110) + 'px' }"></div>
+            <div class="w-full max-w-12 rounded-t bg-emerald-600" :style="{ height: Math.max(8, Number(day.DoanhThu || 0) / maxFinanceDaily * 110) + 'px' }"></div>
             <span class="text-[10px] text-slate-500">{{ String(day.Ngay).slice(5) }}</span>
           </div>
         </div>
