@@ -5,8 +5,8 @@ import api from '../services/api'
 const props = defineProps({ user: { type: Object, required: true } })
 const can = uc => (props.user?.Quyen || []).includes('*') || (props.user?.Quyen || []).includes(uc)
 const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
-const isBuyer = computed(() => props.user?.TenVaiTro === 'Mua hang')
-const isBoard = computed(() => props.user?.TenVaiTro === 'Ban giam doc')
+const isBuyer = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Mua hang')
+const isBoard = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Ban giam doc')
 const isWarehouse = computed(() => can('UC4.3'))
 const allTabs = [
   { id: 'overview', label: 'Tổng quan kho', ucs: ['UC4.1', 'UC4.7'] },
