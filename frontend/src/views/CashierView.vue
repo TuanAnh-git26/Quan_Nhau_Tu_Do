@@ -10,17 +10,20 @@
         </div>
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3 md:min-w-[620px]">
           <label class="text-xs font-semibold text-slate-600">Cơ sở
-            <select v-model="MaCS" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" @change="loadContext">
+            <select v-model="MaCS" :disabled="!isAdmin" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" @change="loadContext">
               <option value="">Chọn cơ sở</option>
               <option v-for="branch in branches" :key="branch.MaCS" :value="String(branch.MaCS)">{{ branch.TenCS || branch.TenCoSo || `Cơ sở #${branch.MaCS}` }}</option>
             </select>
           </label>
-          <label class="text-xs font-semibold text-slate-600">Nhân viên thu ngân
+          <label v-if="isAdmin" class="text-xs font-semibold text-slate-600">Nhân viên thao tác
             <select v-model="MaNV" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
               <option value="">Chọn nhân viên</option>
               <option v-for="employee in employees" :key="employee.MaNV" :value="String(employee.MaNV)">{{ employee.HoTen }} · #{{ employee.MaNV }}</option>
             </select>
           </label>
+          <div v-else class="text-xs font-semibold text-slate-600">Nhân viên đăng nhập
+            <p class="mt-1 rounded-lg border bg-slate-50 px-3 py-2 text-sm">{{ props.user?.HoTen || 'Chưa liên kết nhân viên' }}</p>
+          </div>
           <label class="text-xs font-semibold text-slate-600">Ca làm
             <select v-model="MaCa" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
               <option value="">Tự xác định ca</option>
@@ -32,8 +35,8 @@
 
       <div v-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</div>
       <div v-if="notice" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ notice }}</div>
-      <div v-if="!MaCS || !MaNV" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        Vui lòng chọn cơ sở và nhân viên thu ngân trước khi thao tác.
+      <div v-if="!MaCS || (!MaNV && canCashier)" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        Tài khoản chưa được gán cơ sở hoặc nhân viên để thực hiện nghiệp vụ.
       </div>
 
       <nav class="flex flex-wrap gap-2 rounded-xl bg-white p-2 shadow-sm">
@@ -162,7 +165,8 @@
               </div>
               <div class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
                 <label class="text-xs font-semibold text-slate-600">Giảm giá thủ công (VNĐ)<input v-model.number="manualDiscount" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label>
-                <label class="text-xs font-semibold text-slate-600">Giám sát phê duyệt<select v-model="MaNVDuyet" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">Chọn người duyệt</option><option v-for="employee in employees" :key="employee.MaNV" :value="String(employee.MaNV)">{{ employee.HoTen }} · #{{ employee.MaNV }}</option></select></label>
+                <label class="text-xs font-semibold text-slate-600">Tài khoản Giám sát<input v-model="supervisorUsername" autocomplete="username" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Tên đăng nhập Giám sát" /></label>
+                <label class="text-xs font-semibold text-slate-600">Mật khẩu xác nhận<input v-model="supervisorPassword" type="password" autocomplete="current-password" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Giám sát nhập mật khẩu" /></label>
                 <div class="flex items-end"><button type="button" :disabled="busy" @click="saveManualDiscount" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Lưu giảm giá</button></div>
               </div>
               <div class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
@@ -206,7 +210,7 @@
           <div class="mt-5 border-t border-slate-200 pt-4">
             <label class="text-xs font-semibold text-slate-600">Tiền mặt kiểm đếm thực tế (VNĐ)<input v-model.number="cashCounted" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label>
             <div v-if="shiftSummary" class="mt-2 flex justify-between rounded-lg bg-slate-50 p-3 text-sm"><span>Chênh lệch dự kiến</span><b :class="Number(cashCounted || 0) - Number(shiftSummary.TienMatHeThong) === 0 ? 'text-emerald-700' : 'text-rose-700'">{{ money(Number(cashCounted || 0) - Number(shiftSummary.TienMatHeThong)) }}</b></div>
-            <button type="button" :disabled="busy || !shiftSummary || !MaNV || !MaCa || cashCounted === '' || Number(cashCounted) < 0" @click="closeShift" class="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white disabled:opacity-40">Lập báo cáo & bàn giao ca</button>
+            <button v-if="isAdmin || props.user?.TenVaiTro === 'Thu ngan'" type="button" :disabled="busy || !shiftSummary || !MaNV || !MaCa || cashCounted === '' || Number(cashCounted) < 0" @click="closeShift" class="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white disabled:opacity-40">Lập báo cáo & bàn giao ca</button>
           </div>
         </div>
 
@@ -216,7 +220,7 @@
             <div v-for="report in reports.data || []" :key="report.MaBC" class="rounded-xl border border-slate-200 p-4">
               <div class="flex flex-wrap items-center justify-between gap-2"><div><p class="font-bold">{{ report.TenCa }} · {{ report.NgayCa }}</p><p class="text-xs text-slate-500">Báo cáo #{{ report.MaBC }} · {{ report.NhanVienBanGiao || `NV #${report.MaNVBanGiao}` }}</p></div><span class="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">{{ statusText(report.TrangThai) }}</span></div>
               <div class="mt-3 grid grid-cols-3 gap-2 text-sm"><div><p class="text-xs text-slate-500">Tiền mặt kiểm đếm</p><b>{{ money(report.TienMat) }}</b></div><div><p class="text-xs text-slate-500">Không tiền mặt</p><b>{{ money(report.KhongTienMat) }}</b></div><div><p class="text-xs text-slate-500">Chênh lệch</p><b :class="Number(report.ChenhLech) === 0 ? 'text-emerald-700' : 'text-rose-700'">{{ money(report.ChenhLech) }}</b></div></div>
-              <button v-if="report.TrangThai !== 'Da doi soat'" type="button" :disabled="busy" @click="confirmReport(report.MaBC)" class="mt-3 rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700">Xác nhận đã đối soát</button>
+              <button v-if="(isAdmin || props.user?.TenVaiTro === 'Giam sat') && report.TrangThai !== 'Da doi soat'" type="button" :disabled="busy" @click="confirmReport(report.MaBC)" class="mt-3 rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700">Xác nhận đã đối soát</button>
             </div>
             <div v-if="!reports.data?.length" class="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-400">Chưa có báo cáo bàn giao.</div>
           </div>
