@@ -115,7 +115,7 @@
             <button type="button" @click="loadInvoices(1)" class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50">Làm mới</button>
           </div>
           <div class="mb-3 flex flex-wrap gap-2">
-            <select v-model="invoiceStatus" @change="loadInvoices(1)" class="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">Tất cả trạng thái</option><option value="Dang mo">Đang mở</option><option value="Da thanh toan">Đã thanh toán</option><option value="Da gop">Đã gộp</option></select>
+            <select v-model="invoiceStatus" @change="loadInvoices(1)" class="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">Tất cả trạng thái</option><option value="Dang mo">Đang mở</option><option value="Da thanh toan">Đã thanh toán</option><option value="Da huy">Đã hủy / đã gộp</option></select>
             <input v-model="invoiceSearch" @keyup.enter="loadInvoices(1)" placeholder="Mã hóa đơn / thu ngân" class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             <button type="button" @click="loadInvoices(1)" class="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white">Tìm</button>
           </div>
@@ -166,7 +166,7 @@
                 <div class="flex items-end"><button type="button" :disabled="busy" @click="saveManualDiscount" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Lưu giảm giá</button></div>
               </div>
               <div class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                <label class="text-xs font-semibold text-slate-600">Hình thức thanh toán<select v-model="paymentMethod" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="Tien mat">Tiền mặt</option><option value="The">Thẻ ngân hàng</option><option value="Chuyen khoan/QR">Chuyển khoản / QR</option></select></label>
+                <label class="text-xs font-semibold text-slate-600">Hình thức thanh toán<select v-model="paymentMethod" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="Tien mat">Tiền mặt</option><option value="The">Thẻ ngân hàng</option><option value="Chuyen khoan">Chuyển khoản</option><option value="QR">QR</option></select></label>
                 <label class="text-xs font-semibold text-slate-600">Số tiền thu (VNĐ)<input v-model.number="paymentAmount" type="number" min="1" :max="selectedInvoice.ConCoTheTaoGiaoDich" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label>
                 <div class="flex items-end"><button type="button" :disabled="busy || !paymentAmount || paymentAmount <= 0 || paymentAmount > selectedInvoice.ConCoTheTaoGiaoDich" @click="createPayment" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Ghi nhận thu</button></div>
               </div>
@@ -290,7 +290,7 @@ function dateTime(value) {
 function statusText(value) {
   const map = {
     'Dang mo': 'Đang mở', 'Da gui': 'Đã gửi', 'Dang thanh toan': 'Đang thanh toán',
-    'Da thanh toan': 'Đã thanh toán', 'Da huy': 'Đã hủy', 'Da gop': 'Đã gộp',
+    'Da thanh toan': 'Đã thanh toán', 'Da huy': 'Đã hủy / đã gộp', 'Da gop': 'Đã gộp',
     'Cho che bien': 'Chờ chế biến', 'Da nhan': 'Đã nhận', 'Dang che bien': 'Đang chế biến',
     'Hoan tat': 'Hoàn tất', 'Thanh cong': 'Thành công', 'Cho doi soat': 'Chờ đối soát',
     'That bai': 'Thất bại', 'Da doi soat': 'Đã đối soát',
@@ -403,7 +403,9 @@ async function createPayment() {
   if (!selectedInvoice.value || !MaNV.value) return
   busy.value = true; clearMessages()
   try {
-    const { data } = await api.post(`/cashier/invoices/${selectedInvoice.value.MaHD}/payments`, { HinhThuc: paymentMethod.value, SoTien: Number(paymentAmount.value), MaNV: Number(MaNV.value) })
+    // MaYeuCau giúp chống tạo trùng giao dịch khi bấm đúp hoặc mạng chậm gửi lại.
+    const requestKey = `pay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    const { data } = await api.post(`/cashier/invoices/${selectedInvoice.value.MaHD}/payments`, { HinhThuc: paymentMethod.value, SoTien: Number(paymentAmount.value), MaNV: Number(MaNV.value), MaYeuCau: requestKey })
     selectedInvoice.value = data.HoaDon
     notice.value = data.message
     paymentAmount.value = Number(selectedInvoice.value.ConCoTheTaoGiaoDich || 0)

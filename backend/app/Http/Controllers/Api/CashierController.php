@@ -23,7 +23,10 @@ class CashierController extends Controller
     private const INVOICE_OPEN = 'Dang mo';
     private const INVOICE_PAID = 'Da thanh toan';
     private const INVOICE_VOID = 'Da huy';
-    private const INVOICE_MERGED = 'Da gop';
+    // HOA_DON.TrangThai chỉ cho phép: Dang mo, Cho doi soat, Da thanh toan, Da huy (CHECK trong schema).
+    // Hóa đơn nguồn sau khi gộp được đánh dấu "Da huy" (đã chuyển hết dòng món sang hóa đơn đích).
+    private const INVOICE_MERGED = 'Da huy';
+    private const PROMOTION_ACTIVE = 'Dang ap dung';
     private const PAYMENT_SUCCESS = 'Thanh cong';
     private const PAYMENT_PENDING = 'Cho doi soat';
     private const PAYMENT_FAILED = 'That bai';
@@ -369,7 +372,8 @@ class CashierController extends Controller
             ->orderBy('NgayKT')
             ->get(['MaKM', 'TenKM', 'HinhThuc', 'GiaTri', 'NgayBD', 'NgayKT', 'NganSach', 'TrangThai']);
 
-        $active = $rows->filter(fn ($row) => !in_array(mb_strtolower((string) $row->TrangThai), ['nhap', 'da huy', 'ngung'], true))->values();
+        // Chỉ chương trình đang áp dụng mới được thu ngân sử dụng (không gồm Nhap/Cho duyet/Ket thuc/Da huy).
+        $active = $rows->filter(fn ($row) => $row->TrangThai === self::PROMOTION_ACTIVE)->values();
         return response()->json($active);
     }
 
@@ -389,9 +393,10 @@ class CashierController extends Controller
             abort_unless($promotion, 404, 'Không tìm thấy chương trình khuyến mãi.');
 
             $today = now()->toDateString();
-            $status = mb_strtolower((string) $promotion->TrangThai);
-            if (in_array($status, ['nhap', 'da huy', 'ngung'], true)
-                || $today < $promotion->NgayBD || $today > $promotion->NgayKT) {
+            // NgayBD/NgayKT là DATE; cắt 10 ký tự đầu để so sánh chuỗi Y-m-d an toàn mọi driver.
+            if ($promotion->TrangThai !== self::PROMOTION_ACTIVE
+                || $today < substr((string) $promotion->NgayBD, 0, 10)
+                || $today > substr((string) $promotion->NgayKT, 0, 10)) {
                 throw ValidationException::withMessages(['MaKM' => 'Khuyến mãi chưa có hiệu lực hoặc đã hết hạn.']);
             }
 
@@ -515,6 +520,7 @@ class CashierController extends Controller
     {
         $data = $request->validate([
             'HinhThuc' => ['required', 'string', 'in:Tien mat,The,Chuyen khoan/QR,QR,Chuyen khoan'],
+            // 'Chuyen khoan/QR' (giá trị cũ của giao diện) được quy về 'Chuyen khoan' để thỏa CHECK của THANH_TOAN.HinhThuc.
             'SoTien' => ['required', 'numeric', 'gt:0'],
             'MaNV' => ['required', 'integer', 'exists:NHAN_VIEN,MaNV'],
             'MaYeuCau' => ['nullable', 'string', 'max:80'],
@@ -529,7 +535,9 @@ class CashierController extends Controller
             $branchId = $this->invoiceBranchId($id);
             $this->assertEmployeeForBranch((int) $data['MaNV'], $branchId);
 
-            $requestCode = $data['MaYeuCau'] ?: (string) Str::uuid();
+            // MaYeuCau là trường tùy chọn: khi giao diện không gửi thì key không có trong $data.
+            $requestCode = ($data['MaYeuCau'] ?? null) ?: (string) Str::uuid();
+            $method = $data['HinhThuc'] === 'Chuyen khoan/QR' ? 'Chuyen khoan' : $data['HinhThuc'];
             $existing = DB::table('THANH_TOAN')->where('MaYeuCau', $requestCode)->first();
             if ($existing) {
                 if ((int) $existing->MaHD !== $id) {
@@ -548,12 +556,12 @@ class CashierController extends Controller
                 throw ValidationException::withMessages(['SoTien' => 'Số tiền vượt quá phần còn có thể tạo giao dịch. Hãy tải lại hóa đơn.']);
             }
 
-            $isCash = $this->isCashMethod($data['HinhThuc']);
+            $isCash = $this->isCashMethod($method);
             $paymentId = DB::table('THANH_TOAN')->insertGetId([
                 'MaHD' => $id,
                 'MaYeuCau' => $requestCode,
                 'MaGiaoDichCong' => $data['MaGiaoDichCong'] ?? null,
-                'HinhThuc' => $data['HinhThuc'],
+                'HinhThuc' => $method,
                 'SoTien' => round((float) $data['SoTien'], 2),
                 'ThoiGian' => now(),
                 'TrangThaiGD' => $isCash ? self::PAYMENT_SUCCESS : self::PAYMENT_PENDING,

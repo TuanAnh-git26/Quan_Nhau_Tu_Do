@@ -48,12 +48,9 @@ const loginBusy = ref(false)
 const logoutBusy = ref(false)
 const loginError = ref('')
 const logoutError = ref('')
-const loginBranches = ref([])
-const branchesBusy = ref(false)
 const loginForm = ref({
   TenDangNhap: '',
   MatKhau: '',
-  MaCS: '',
 })
 
 const allNavigation = [
@@ -128,114 +125,6 @@ function messageFrom(e, fallback) {
   )
 }
 
-// CACHE DANH SÁCH CƠ SỞ
-// Chỉ lưu mã và tên cơ sở, không lưu mật khẩu.
-const BRANCH_CACHE_KEY = 'qntd:login-branches:v1'
-const BRANCH_CACHE_TTL = 5 * 60 * 1000
-
-let branchesPromise = null
-
-function applyBranches(items) {
-  loginBranches.value = items
-
-  if (!items.some(x => String(x.MaCS) === loginForm.value.MaCS)) {
-    loginForm.value.MaCS = items.length
-      ? String(items[0].MaCS)
-      : ''
-  }
-}
-
-function readCachedBranches() {
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem(BRANCH_CACHE_KEY) || 'null'
-    )
-
-    if (
-      !saved ||
-      Date.now() - saved.savedAt > BRANCH_CACHE_TTL ||
-      !Array.isArray(saved.items)
-    ) {
-      return false
-    }
-
-    const items = saved.items.filter(
-      x => x && x.MaCS != null && x.TenCS
-    )
-
-    if (!items.length) return false
-
-    applyBranches(items)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// LẤY DANH SÁCH CƠ SỞ TỪ BACKEND
-async function loadLoginBranches() {
-  // Tránh gọi API nhiều lần cùng lúc.
-  if (branchesPromise) return branchesPromise
-
-  branchesBusy.value = true
-
-  branchesPromise = (async () => {
-    try {
-      const { data } = await api.get('/auth/branches', {
-        timeout: 6000,
-      })
-
-      const raw = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.data)
-          ? data.data
-          : []
-
-      const items = raw.filter(
-        x => x && x.MaCS != null && x.TenCS
-      )
-
-      if (!items.length) {
-        if (!loginBranches.value.length) {
-          loginError.value =
-            'Backend chưa trả về cơ sở hợp lệ. Kiểm tra bảng CO_SO.'
-        }
-        return
-      }
-
-      applyBranches(items)
-
-      // Lưu danh sách cơ sở để lần sau hiển thị nhanh.
-      try {
-        localStorage.setItem(
-          BRANCH_CACHE_KEY,
-          JSON.stringify({
-            savedAt: Date.now(),
-            items,
-          })
-        )
-      } catch {
-        // Trình duyệt có thể chặn localStorage.
-      }
-
-      if (!user.value) loginError.value = ''
-    } catch (e) {
-      // Nếu có cache, vẫn cho người dùng chọn cơ sở.
-      if (!loginBranches.value.length && !user.value) {
-        loginError.value = messageFrom(
-          e,
-          'Không tải được danh sách cơ sở. Kiểm tra Laravel và MySQL.'
-        )
-      }
-    } finally {
-      branchesBusy.value = false
-      branchesPromise = null
-    }
-  })()
-
-  return branchesPromise
-}
-
 // CẬP NHẬT TÀI KHOẢN
 function acceptProfile(data) {
   if (!data?.MaTK || !Array.isArray(data.Quyen)) {
@@ -289,7 +178,6 @@ async function login() {
     const response = await loginSession({
       TenDangNhap: loginForm.value.TenDangNhap.trim(),
       MatKhau: loginForm.value.MatKhau,
-      MaCS: Number(loginForm.value.MaCS),
     })
 
     // API đăng nhập trả luôn thông tin tài khoản.
@@ -301,7 +189,7 @@ async function login() {
   } catch (e) {
     loginError.value = messageFrom(
       e,
-      'Đăng nhập không thành công. Kiểm tra tài khoản, cơ sở và kết nối.'
+      'Đăng nhập không thành công. Kiểm tra tài khoản và kết nối.'
     )
   } finally {
     loginBusy.value = false
@@ -337,19 +225,14 @@ function expired() {
   user.value = null
   storeProfile(null)
   currentPage.value = 'dashboard'
-
-  loadLoginBranches()
 }
 
 // KHI MỞ WEBSITE:
 // 1. Hiện form đăng nhập ngay.
-// 2. Hiện danh sách cơ sở đã lưu (nếu có).
-// 3. Cập nhật cơ sở từ backend.
+// 2. Khôi phục phiên đăng nhập (nếu còn).
 onMounted(() => {
   window.addEventListener('qntd-session-expired', expired)
 
-  readCachedBranches()
-  void loadLoginBranches()
   void restoreSession()
 })
 
@@ -402,19 +285,6 @@ onUnmounted(() => {
         {{ loginError }}
       </div>
 
-      <button
-        type="button"
-        class="retry-branch-button"
-        :disabled="branchesBusy"
-        @click="loadLoginBranches"
-      >
-        {{
-          branchesBusy
-            ? 'Đang cập nhật cơ sở...'
-            : 'Tải lại danh sách cơ sở'
-        }}
-      </button>
-
       <label class="mb-4 block text-sm font-semibold text-slate-600">
         Tên đăng nhập
 
@@ -424,26 +294,6 @@ onUnmounted(() => {
           required
           class="mt-1 w-full rounded-lg border border-slate-300 p-3"
         />
-      </label>
-
-      <label class="mb-4 block text-sm font-semibold text-slate-600">
-        Cơ sở đăng nhập
-
-        <select
-          v-model="loginForm.MaCS"
-          required
-          class="mt-1 w-full rounded-lg border border-slate-300 bg-white p-3"
-        >
-          <option value="">Chọn cơ sở</option>
-
-          <option
-            v-for="branch in loginBranches"
-            :key="branch.MaCS"
-            :value="String(branch.MaCS)"
-          >
-            {{ branch.TenCS }}
-          </option>
-        </select>
       </label>
 
       <label class="mb-5 block text-sm font-semibold text-slate-600">
@@ -459,7 +309,7 @@ onUnmounted(() => {
       </label>
 
       <button
-        :disabled="loginBusy || !loginBranches.length"
+        :disabled="loginBusy"
         type="submit"
         class="w-full rounded-lg bg-slate-800 p-3 text-sm font-bold text-white disabled:opacity-50"
       >
@@ -744,13 +594,5 @@ onUnmounted(() => {
   border-radius: 12px;
   font-weight: 900;
   font-size: 26px;
-}
-
-.grid.min-h-screen > form .retry-branch-button {
-  margin: 4px 0 12px;
-  padding: 10px;
-  background: #e8f1fa;
-  color: #234963;
-  border: 1px solid #a7c1d5;
 }
 </style>

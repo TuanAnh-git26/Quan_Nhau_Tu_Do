@@ -25,7 +25,8 @@ class AuthController extends Controller
         $data = $request->validate([
             'TenDangNhap' => ['required', 'string', 'max:100'],
             'MatKhau' => ['required', 'string'],
-            'MaCS' => ['required', 'integer', 'exists:CO_SO,MaCS'],
+            // Không còn bắt chọn cơ sở khi đăng nhập; vẫn nhận MaCS (nếu có) để tương thích bản cũ.
+            'MaCS' => ['nullable', 'integer', 'exists:CO_SO,MaCS'],
         ]);
 
         $key = 'qntd-login:'.hash('sha256', mb_strtolower($data['TenDangNhap']).'|'.$request->ip());
@@ -47,15 +48,29 @@ class AuthController extends Controller
 
         $user = Auth::guard('web')->user();
         $isAdmin = $user->TenVaiTro === 'Quan tri he thong';
-        if (!$isAdmin && ((int) $user->MaCS !== (int) $data['MaCS'] || !$user->MaNV)) {
-            Auth::guard('web')->logout();
-            throw ValidationException::withMessages([
-                'MaCS' => 'Tài khoản này không được phép làm việc ở cơ sở đã chọn.',
-            ]);
+        $requestedBranch = !empty($data['MaCS']) ? (int) $data['MaCS'] : null;
+
+        if ($isAdmin) {
+            // Admin vào hệ thống không cần chọn cơ sở: lấy cơ sở của hồ sơ nhân viên (nếu có),
+            // nếu không thì cơ sở đang hoạt động đầu tiên. Sau đó đổi cơ sở ngay trong từng trang quản lý.
+            $branchId = $requestedBranch
+                ?: ((int) $user->MaCS ?: (int) DB::table('CO_SO')->where('TrangThai', 'Dang hoat dong')->orderBy('MaCS')->value('MaCS'));
+        } else {
+            // Nhân viên luôn làm việc tại cơ sở của chính mình.
+            if (!$user->MaNV || !$user->MaCS || ($requestedBranch && $requestedBranch !== (int) $user->MaCS)) {
+                Auth::guard('web')->logout();
+                throw ValidationException::withMessages([
+                    'TenDangNhap' => ($user->MaNV && $user->MaCS)
+                        ? 'Tài khoản này không được phép làm việc ở cơ sở đã chọn.'
+                        : 'Tài khoản này chưa được gán nhân viên/cơ sở làm việc. Vui lòng liên hệ quản trị viên.',
+                ]);
+            }
+            $branchId = (int) $user->MaCS;
         }
+        $data['MaCS'] = $branchId;
 
         $request->session()->regenerate();
-        $request->session()->put('qntd_branch_id', (int) $data['MaCS']);
+        $request->session()->put('qntd_branch_id', $branchId);
         $request->session()->put('qntd_password_fingerprint', hash('sha256', $user->MatKhauHash));
         RateLimiter::clear($key);
 
@@ -116,6 +131,10 @@ class AuthController extends Controller
             ]);
         });
         $request->session()->put('qntd_password_fingerprint', hash('sha256', $hash));
+        // Middleware AuthenticateSession của Sanctum ghi lại hash mật khẩu của đối tượng $user
+        // SAU khi response được tạo. Nếu vẫn là hash cũ thì request kế tiếp bị đăng xuất (401),
+        // nên cập nhật hash mới ngay trên đối tượng người dùng đang đăng nhập.
+        $user->MatKhauHash = $hash;
         return response()->json(['message' => 'Đã đổi mật khẩu.']);
     }
 

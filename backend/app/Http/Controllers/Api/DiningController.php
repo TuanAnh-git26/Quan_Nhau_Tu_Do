@@ -10,6 +10,8 @@ use Illuminate\Validation\ValidationException;
 
 class DiningController extends Controller
 {
+    private const ACTIVE_ORDER_LOOKAHEAD_HOURS = 3;
+
     public function areas(Request $request)
     {
         $data = $request->validate([
@@ -216,13 +218,18 @@ class DiningController extends Controller
                     ->where('db.ThoiGianKetThucDuKien', '>', $data['ThoiGianDen']);
                 if (!empty($data['MaDatBan'])) $sub->where('db.MaDatBan', '<>', $data['MaDatBan']);
             })
-            ->whereNotExists(function ($sub) {
+            ->select('b.MaBan', 'b.SoBan', 'b.SoCho', 'b.TrangThai', 'b.MaKV', 'kv.TenKV', 'kv.MaCS')
+            ->orderBy('b.MaBan');
+
+        // Order đang hoạt động chỉ ảnh hưởng khi khách đến trong thời gian gần; đặt bàn cho
+        // ngày/giờ xa không bị chặn chỉ vì bàn đang có khách lúc này.
+        if ($this->startsSoon($data['ThoiGianDen'])) {
+            $query->whereNotExists(function ($sub) {
                 $sub->selectRaw('1')->from('PHIEU_ORDER as po')
                     ->whereColumn('po.MaBan', 'b.MaBan')
                     ->whereIn('po.TrangThai', ['Dang mo', 'Da gui', 'Dang thanh toan']);
-            })
-            ->select('b.MaBan', 'b.SoBan', 'b.SoCho', 'b.TrangThai', 'b.MaKV', 'kv.TenKV', 'kv.MaCS')
-            ->orderBy('b.MaBan');
+            });
+        }
 
         return response()->json($query->get());
     }
@@ -353,6 +360,13 @@ class DiningController extends Controller
         ]);
     }
 
+    /** Giờ đến nằm trong khoảng gần (mặc định 3 giờ tới) nên cần xét order đang hoạt động. */
+    private function startsSoon(string $arrival): bool
+    {
+        $timestamp = strtotime($arrival);
+        return $timestamp !== false && $timestamp <= time() + self::ACTIVE_ORDER_LOOKAHEAD_HOURS * 3600;
+    }
+
     private function persistReservation(array $data, ?int $id = null): int
     {
         $tableIds = array_values(array_unique(array_map('intval', $data['MaBan'])));
@@ -368,7 +382,8 @@ class DiningController extends Controller
             throw ValidationException::withMessages(['SoNguoi' => 'Tổng sức chứa của các bàn đã chọn chưa đủ số khách.']);
         }
 
-        $activeOrder = DB::table('PHIEU_ORDER')->whereIn('MaBan', $tableIds)
+        $activeOrder = $this->startsSoon($data['ThoiGianDen']) && DB::table('PHIEU_ORDER')
+            ->whereIn('MaBan', $tableIds)
             ->whereIn('TrangThai', ['Dang mo', 'Da gui', 'Dang thanh toan'])->exists();
         if ($activeOrder) {
             throw ValidationException::withMessages(['MaBan' => 'Một trong các bàn đang có order hoạt động.']);

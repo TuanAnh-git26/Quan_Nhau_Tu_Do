@@ -22,12 +22,13 @@ class EnsureBranchScope
         }
 
         $branch = (int) $request->session()->get('qntd_branch_id', 0);
-        abort_unless($branch > 0, 403, 'Vui lòng chọn cơ sở hợp lệ khi đăng nhập.');
 
         if ($user->TenVaiTro === 'Quan tri he thong') {
-            // Admin đã đăng nhập được phép quản lý nhiều cơ sở.
+            // Admin đã đăng nhập được phép quản lý nhiều cơ sở (chọn cơ sở trong từng trang quản lý).
             return $next($request);
         }
+
+        abort_unless($branch > 0, 403, 'Tài khoản chưa được gán cơ sở làm việc.');
 
         abort_unless((int) $user->MaCS === $branch, 403, 'Cơ sở không thuộc nhân viên.');
         if ($request->exists('MaCS')) {
@@ -96,7 +97,9 @@ class EnsureBranchScope
                 'BANG_LUONG' => DB::table('BANG_LUONG as bl')->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'bl.MaNV')->where('bl.MaBL', $id)->value('nv.MaCS'),
                 'PHIEU_ORDER' => DB::table('PHIEU_ORDER as po')->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')->where('po.MaOrder', $id)->value('kv.MaCS'),
                 'CHI_TIET_ORDER' => DB::table('CHI_TIET_ORDER as cto')->join('PHIEU_ORDER as po', 'po.MaOrder', '=', 'cto.MaOrder')->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')->where('cto.MaCTOrder', $id)->value('kv.MaCS'),
-                'HOA_DON' => DB::table('CT_HOA_DON as cthd')->join('CHI_TIET_ORDER as cto', 'cto.MaCTOrder', '=', 'cthd.MaCTOrder')->join('PHIEU_ORDER as po', 'po.MaOrder', '=', 'cto.MaOrder')->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')->where('cthd.MaHD', $id)->value('kv.MaCS'),
+                'HOA_DON' => DB::table('CT_HOA_DON as cthd')->join('CHI_TIET_ORDER as cto', 'cto.MaCTOrder', '=', 'cthd.MaCTOrder')->join('PHIEU_ORDER as po', 'po.MaOrder', '=', 'cto.MaOrder')->join('BAN as b', 'b.MaBan', '=', 'po.MaBan')->join('KHU_VUC as kv', 'kv.MaKV', '=', 'b.MaKV')->where('cthd.MaHD', $id)->value('kv.MaCS')
+                    // Hóa đơn không còn dòng món (vd. hóa đơn nguồn đã gộp): lấy cơ sở của thu ngân lập hóa đơn.
+                    ?? DB::table('HOA_DON as hd')->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'hd.MaNV')->where('hd.MaHD', $id)->value('nv.MaCS'),
                 default => null,
             };
             abort_unless($actual !== null && (int) $actual === $branch, 403, 'Tài nguyên không thuộc cơ sở được phép.');
