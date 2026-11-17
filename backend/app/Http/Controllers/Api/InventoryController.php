@@ -738,6 +738,9 @@ class InventoryController extends Controller
                 if (!$po || !in_array($po->TrangThai, ['Da gui', 'Da nhan mot phan'], true)) {
                     throw ValidationException::withMessages(['MaPO' => 'Chỉ nhận hàng từ PO đã gửi hoặc đang nhận một phần.']);
                 }
+                if ((int) $po->MaCS !== (int) $data['MaCS']) {
+                    abort(403, 'PO không thuộc cơ sở đang nhập kho.');
+                }
                 if ((int) $po->MaNCC !== (int) $data['MaNCC'] || (int) $po->MaCS !== (int) $data['MaCS']) {
                     throw ValidationException::withMessages(['MaPO' => 'Nhà cung cấp hoặc cơ sở không khớp với PO.']);
                 }
