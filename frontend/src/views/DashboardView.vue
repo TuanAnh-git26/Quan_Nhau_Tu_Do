@@ -9,6 +9,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['navigate'])
 const has = uc => (props.user?.Quyen || []).includes('*') || (props.user?.Quyen || []).includes(uc)
+const isAdmin = computed(() => props.user?.TenVaiTro === 'Quan tri he thong')
+const isBoard = computed(() => isAdmin.value || props.user?.TenVaiTro === 'Ban giam doc')
 const maySeeMenu = computed(() => ['UC2.1', 'UC2.2', 'UC2.3'].some(has))
 const maySeeCategories = computed(() => ['UC2.1', 'UC2.2', 'UC2.4'].some(has))
 const maySeeFinance = computed(() => has('UC7.5'))
@@ -43,9 +45,10 @@ async function loadBranches() {
   error.value = ''
   try {
     const { data } = await api.get('/branches')
-    branches.value = Array.isArray(data) ? data : []
+    const allBranches = Array.isArray(data) ? data : []
+    branches.value = isAdmin.value ? allBranches : allBranches.filter(x => Number(x.MaCS) === Number(props.user?.MaCS))
     if (!branches.value.some(x => String(x.MaCS) === selectedBranch.value)) {
-      selectedBranch.value = branches.value[0] ? String(branches.value[0].MaCS) : ''
+      selectedBranch.value = String(props.user?.MaCS || branches.value[0]?.MaCS || '')
     }
     await loadMetrics()
   } catch (e) {
@@ -119,7 +122,7 @@ onUnmounted(() => { sequence++ })
     <div v-if="error" role="alert" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
     <section class="flex flex-wrap items-end gap-3 rounded-xl border bg-white p-4">
       <label class="min-w-52 flex-1 text-sm font-semibold">Cơ sở
-        <select v-model="selectedBranch" class="mt-1 block w-full rounded-lg border p-2" :disabled="loadingBranches" @change="loadMetrics">
+        <select v-model="selectedBranch" class="mt-1 block w-full rounded-lg border p-2" :disabled="loadingBranches || !isAdmin" @change="loadMetrics">
           <option v-for="branch in branches" :key="branch.MaCS" :value="String(branch.MaCS)">{{ branch.TenCS }}</option>
         </select>
       </label>
@@ -146,8 +149,19 @@ onUnmounted(() => { sequence++ })
           <strong class="mt-2 block text-xl">{{ money(finance[key]) }}</strong>
         </article>
         <article class="dash-card rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Giao dịch thành công</p><strong class="mt-2 block text-xl">{{ finance.GiaoDichThanhCong || 0 }}</strong></article>
+        <article class="dash-card rounded-xl border bg-white p-5"><p class="text-sm text-slate-500">Giá trị tồn kho hiện tại</p><strong class="mt-2 block text-xl">{{ money(finance.GiaTriTonKho) }}</strong></article>
       </div>
       <p v-else-if="!loadingMetrics" class="text-sm text-slate-500">Chưa có số liệu tài chính cho bộ lọc đã chọn.</p>
+      <div v-if="finance?.DoanhThuTheoNgay?.length" class="dash-card rounded-xl border bg-white p-5">
+        <h3 class="font-semibold">Doanh thu theo ngày</h3>
+        <div class="mt-4 flex min-h-36 items-end gap-2 overflow-x-auto">
+          <div v-for="day in finance.DoanhThuTheoNgay" :key="day.Ngay" class="flex min-w-12 flex-1 flex-col items-center justify-end gap-1">
+            <span class="text-[10px] text-slate-500">{{ money(day.DoanhThu) }}</span>
+            <div class="w-full max-w-12 rounded-t bg-emerald-600" :style="{ height: Math.max(8, Number(day.DoanhThu || 0) / Math.max(1, ...finance.DoanhThuTheoNgay.map(x => Number(x.DoanhThu || 0))) * 110) + 'px' }"></div>
+            <span class="text-[10px] text-slate-500">{{ String(day.Ngay).slice(5) }}</span>
+          </div>
+        </div>
+      </div>
       <p class="text-xs text-slate-500">Số liệu theo API báo cáo tài chính; chưa bao gồm đầy đủ giá vốn, chi phí lương và tất cả chi phí vận hành.</p>
     </div>
 
@@ -168,6 +182,12 @@ onUnmounted(() => { sequence++ })
           <p class="text-sm text-slate-500">Phiếu thu/chi chờ duyệt</p>
           <strong class="mt-2 block text-2xl" :class="finance.PhieuChoDuyet ? 'text-amber-600' : ''">{{ finance.PhieuChoDuyet || 0 }}</strong>
           <button v-if="canOpen('finance')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'finance')">Mở Tài chính →</button>
+        </article>
+        <article v-if="isBoard && finance" class="dash-card rounded-xl border bg-white p-5">
+          <p class="text-sm text-slate-500">PO và kế hoạch ngân sách chờ duyệt</p>
+          <strong class="mt-2 block text-2xl" :class="finance.SoMucChoDuyet ? 'text-amber-600' : ''">{{ finance.SoMucChoDuyet || 0 }}</strong>
+          <button v-if="canOpen('inventory')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'inventory')">Mở duyệt PO →</button>
+          <button v-if="canOpen('finance')" class="mt-3 text-xs font-semibold text-amber-700 hover:underline" @click="emit('navigate', 'finance')">Mở duyệt ngân sách →</button>
         </article>
       </div>
     </div>
