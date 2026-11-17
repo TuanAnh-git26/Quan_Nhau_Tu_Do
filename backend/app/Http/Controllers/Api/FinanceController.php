@@ -275,20 +275,23 @@ class FinanceController extends Controller
             ->where('pn.MaCS', $branch)->where('pn.TrangThai', 'Da xac nhan')
             ->sum(DB::raw('ct.SoLuongCon * ct.DonGia'));
 
-        $pendingPurchaseOrders = DB::table('DON_DAT_HANG as po')
-            ->join('NHA_CUNG_CAP as ncc', 'ncc.MaNCC', '=', 'po.MaNCC')
-            ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'po.MaNV')
-            ->where('po.MaCS', $branch)->where('po.TrangThai', 'Cho duyet')
-            ->orderBy('po.NgayLap')
-            ->limit(10)
-            ->get(['po.MaPO', 'po.NgayLap', 'po.TrangThai', 'ncc.TenNCC', 'nv.HoTen as NguoiLap']);
+        $canSeeApprovalQueue = in_array((string) $request->user()?->TenVaiTro, ['Ban giam doc', 'Quan tri he thong'], true);
+        $pendingPurchaseOrders = $canSeeApprovalQueue
+            ? DB::table('DON_DAT_HANG as po')
+                ->join('NHA_CUNG_CAP as ncc', 'ncc.MaNCC', '=', 'po.MaNCC')
+                ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'po.MaNV')
+                ->where('po.MaCS', $branch)->where('po.TrangThai', 'Cho duyet')
+                ->orderBy('po.NgayLap')->limit(10)
+                ->get(['po.MaPO', 'po.NgayLap', 'po.TrangThai', 'ncc.TenNCC', 'nv.HoTen as NguoiLap'])
+            : collect();
 
-        $pendingBudgets = DB::table('KE_HOACH_NGAN_SACH as kh')
-            ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'kh.MaNVLap')
-            ->where('kh.MaCS', $branch)->where('kh.TrangThai', 'Cho duyet')
-            ->orderBy('kh.MaKHNS')
-            ->limit(10)
-            ->get(['kh.MaKHNS', 'kh.TenKH', 'kh.KyKeHoach', 'kh.SoTien', 'kh.TrangThai', 'nv.HoTen as NguoiLap']);
+        $pendingBudgets = $canSeeApprovalQueue
+            ? DB::table('KE_HOACH_NGAN_SACH as kh')
+                ->join('NHAN_VIEN as nv', 'nv.MaNV', '=', 'kh.MaNVLap')
+                ->where('kh.MaCS', $branch)->where('kh.TrangThai', 'Cho duyet')
+                ->orderBy('kh.MaKHNS')->limit(10)
+                ->get(['kh.MaKHNS', 'kh.TenKH', 'kh.KyKeHoach', 'kh.SoTien', 'kh.TrangThai', 'nv.HoTen as NguoiLap'])
+            : collect();
 
         $pendingVouchers = DB::table('PHIEU_THU_CHI')
             ->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count();
@@ -304,8 +307,8 @@ class FinanceController extends Controller
             'GiaoDichThanhCong' => $paymentCount,
             'DoanhThuTheoNgay' => $dailyRevenue,
             'GiaTriTonKho' => $stockValue,
-            'POChoDuyet' => DB::table('DON_DAT_HANG')->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count(),
-            'KeHoachChoDuyet' => DB::table('KE_HOACH_NGAN_SACH')->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count(),
+            'POChoDuyet' => $canSeeApprovalQueue ? DB::table('DON_DAT_HANG')->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count() : 0,
+            'KeHoachChoDuyet' => $canSeeApprovalQueue ? DB::table('KE_HOACH_NGAN_SACH')->where('MaCS', $branch)->where('TrangThai', 'Cho duyet')->count() : 0,
             'PhieuChoDuyet' => $pendingVouchers,
             'SoMucChoDuyet' => $pendingPurchaseOrders->count() + $pendingBudgets->count() + $pendingVouchers,
             'POCanDuyet' => $pendingPurchaseOrders,
