@@ -11,7 +11,7 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Kiểm thử hồi quy theo Báo cáo Nhóm 8 v3.
+ * Kiểm thử hồi quy theo Báo cáo Nhóm 8 v4.
  * Tuyệt đối chỉ chạy trên cơ sở dữ liệu riêng có tên kết thúc bằng "_test".
  * Schema phải được nạp từ backend/database/schema_mysql.sql trước khi chạy.
  */
@@ -213,11 +213,10 @@ class ReportBusinessRulesTest extends TestCase
         $this->assertSame(1, DB::table('THANH_TOAN')->where('MaYeuCau', $code)->count());
     }
 
-    public function test_fifo_issue_uses_earliest_receipt_lot_first(): void
+    public function test_bep_bar_request_is_not_issued_until_warehouse_confirms_fifo(): void
     {
         $branch = $this->branch();
-        $identity = $this->identity($branch, ['UC4.3']);
-        $this->signIn($identity, $branch);
+        $bep = $this->identity($branch, ['UC3.3'], 'Bep');
         $supplier = DB::table('NHA_CUNG_CAP')->insertGetId([
             'TenNCC' => 'NCC kiểm thử ' . Str::random(7),
             'TrangThai' => 'Dang hop tac',
@@ -230,7 +229,7 @@ class ReportBusinessRulesTest extends TestCase
         foreach ([['2026-10-01 08:00:00', 3], ['2026-10-06 08:00:00', 5]] as [$date, $quantity]) {
             $receipt = DB::table('PHIEU_NHAP_KHO')->insertGetId([
                 'NgayNhap' => $date, 'TrangThai' => 'Da xac nhan',
-                'MaNCC' => $supplier, 'MaNV' => $identity['employee'],
+                'MaNCC' => $supplier, 'MaNV' => $bep['employee'],
                 'MaCS' => $branch, 'ChungTuNguon' => 'Chứng từ thử',
             ], 'MaPN');
             $lots[] = DB::table('CT_PHIEU_NHAP')->insertGetId([
@@ -239,12 +238,55 @@ class ReportBusinessRulesTest extends TestCase
                 'DonGia' => 50000, 'HanSuDung' => '2027-12-31',
             ], 'MaCTPN');
         }
-        $this->postJson('/api/inventory/issues', [
-            'MaCS' => $branch, 'MaNV' => $identity['employee'], 'BoPhanNhan' => 'Bep',
-            'items' => [['MaNL' => $ingredient, 'SoLuongXuat' => 4]],
+
+        $this->signIn($bep, $branch);
+        $requestResponse = $this->postJson('/api/bep-bar/stock-requests', [
+            'MaCS' => $branch,
+            'MaNV' => $bep['employee'],
+            'BoPhanNhan' => 'Bep',
+            'items' => [['MaNL' => $ingredient, 'SoLuongDeNghi' => 4]],
         ])->assertCreated();
+        $issueId = (int) $requestResponse->json('MaPX');
+        $this->assertGreaterThan(0, $issueId);
+        $this->assertEquals(3, DB::table('CT_PHIEU_NHAP')->where('MaCTPN', $lots[0])->value('SoLuongCon'));
+        $this->assertEquals(5, DB::table('CT_PHIEU_NHAP')->where('MaCTPN', $lots[1])->value('SoLuongCon'));
+        $this->assertDatabaseHas('PHIEU_XUAT_KHO', ['MaPX' => $issueId, 'TrangThai' => 'Cho xac nhan']);
+
+        $warehouse = $this->identity($branch, ['UC4.3'], 'Kho');
+        $this->signIn($warehouse, $branch);
+        $this->postJson("/api/inventory/issues/{$issueId}/confirm", [
+            'MaCS' => $branch, 'MaNV' => $warehouse['employee'],
+        ])->assertOk();
+
         $this->assertEquals(0, DB::table('CT_PHIEU_NHAP')->where('MaCTPN', $lots[0])->value('SoLuongCon'));
         $this->assertEquals(4, DB::table('CT_PHIEU_NHAP')->where('MaCTPN', $lots[1])->value('SoLuongCon'));
+        $this->assertDatabaseHas('PHIEU_XUAT_KHO', ['MaPX' => $issueId, 'TrangThai' => 'Da xuat']);
+        $this->assertSame(2, DB::table('CT_PHIEU_XUAT')->where('MaPX', $issueId)->count());
+    }
+
+    public function test_payroll_preparation_and_approval_are_separated_by_role(): void
+    {
+        $branch = $this->branch();
+        $hr = $this->identity($branch, ['UC6.4'], 'Nhan su');
+        $accountant = $this->identity($branch, ['UC6.4'], 'Ke toan');
+
+        $this->signIn($accountant, $branch);
+        $this->postJson('/api/hr/payrolls/generate', [
+            'MaCS' => $branch, 'KyLuong' => '2026-11-01',
+        ])->assertForbidden();
+
+        $payroll = DB::table('BANG_LUONG')->insertGetId([
+            'KyLuong' => '2026-11-01', 'LuongCoBan' => 10000000,
+            'PhuCap' => 0, 'Thuong' => 0, 'KhauTru' => 0,
+            'ThucLinh' => 10000000, 'TrangThai' => 'Cho ke toan',
+            'MaNV' => $hr['employee'],
+        ], 'MaBL');
+
+        $this->postJson("/api/hr/payrolls/{$payroll}/approve")->assertOk();
+        $this->assertDatabaseHas('BANG_LUONG', ['MaBL' => $payroll, 'TrangThai' => 'Da chot']);
+
+        $this->signIn($hr, $branch);
+        $this->postJson("/api/hr/payrolls/{$payroll}/approve")->assertForbidden();
     }
 
     public function test_cooking_item_cancellation_requires_supervisor_and_records_audit(): void
