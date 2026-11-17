@@ -220,8 +220,8 @@ onMounted(init)
         <section v-if="isBoard" class="grid gap-4 lg:grid-cols-2">
           <div class="rounded-xl border p-4">
             <h3 class="font-bold">Đơn mua hàng chờ Ban Giám đốc duyệt</h3>
-            <div v-for="po in stats.POC anDuyet || stats.POCanDuyet || []" :key="po.MaPO" class="flex justify-between gap-3 border-b py-2 text-sm">
-              <span>PO #{{ po.MaPO }} · {{ po.TenNCC }} · {{ po.NguoiLap }}</span><button class="text-xs font-semibold text-amber-700" @click="selectTab('budgets')">Mở phân hệ →</button>
+            <div v-for="po in stats.POCanDuyet || []" :key="po.MaPO" class="flex justify-between gap-3 border-b py-2 text-sm">
+              <span>PO #{{ po.MaPO }} · {{ po.TenNCC }} · {{ po.NguoiLap }}</span><span class="text-xs text-amber-700">Chờ duyệt tại phân hệ Kho</span>
             </div>
             <p v-if="!(stats.POCanDuyet || []).length" class="pt-3 text-sm text-slate-500">Không có PO chờ duyệt.</p>
           </div>
